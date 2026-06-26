@@ -73,7 +73,8 @@ describe('store hydrate (simulated restart)', () => {
   it('restores a captured sighting after reset()', async () => {
     const baseline = lifeDexStore.listSightings().length;
 
-    const res = await createSightingFromImage({ imageUri: 'mock://x.jpg', mockSpecies: 'cat' });
+    // 'dog' is not in the seed → a real first discovery that gets persisted.
+    const res = await createSightingFromImage({ imageUri: 'mock://x.jpg', mockSpecies: 'dog' });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     await lifeDexStore.flush(); // ensure the persist write settled
@@ -99,7 +100,7 @@ describe('store hydrate (simulated restart)', () => {
 
   it('hydrate is idempotent (no duplication on double call)', async () => {
     const baseline = lifeDexStore.listSightings().length;
-    const res = await createSightingFromImage({ imageUri: 'mock://y.jpg', mockSpecies: 'frog' });
+    const res = await createSightingFromImage({ imageUri: 'mock://y.jpg', mockSpecies: 'dog' });
     if (!res.ok) return;
     await lifeDexStore.flush();
 

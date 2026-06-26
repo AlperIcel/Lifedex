@@ -21,6 +21,7 @@
  * `{ blocked: true, reasons }` so it can show a blocked state.
  */
 import { buildCardMetadata } from '@/domain/cardMetadata';
+import { evaluateDedup } from '@/domain/dedup';
 import type { GeoPoint, Sighting } from '@/domain/types';
 import { getProviders } from '@/providers';
 import { lifeDexStore, type CollectionCard } from '@/store/useLifeDexStore';
@@ -44,11 +45,21 @@ export interface CreateSightingInput {
   mockSpecies?: string;
 }
 
-export interface CreateSightingSuccess {
+export interface CreateSightingOk {
   ok: true;
   blocked: false;
+  /**
+   * True when this species was ALREADY in the collection (a re-catch). No new
+   * record is created; sightingId/cardId point at the existing entry so the UI
+   * can navigate to it.
+   */
+  duplicate: boolean;
   sightingId: string;
   cardId: string;
+  /** Common name of the species (handy for duplicate messaging). */
+  species: string;
+  /** Only meaningful when duplicate: re-catch of the same species nearby today. */
+  sameSpotToday: boolean;
 }
 
 export interface CreateSightingBlocked {
@@ -57,7 +68,7 @@ export interface CreateSightingBlocked {
   reasons: string[];
 }
 
-export type CreateSightingResult = CreateSightingSuccess | CreateSightingBlocked;
+export type CreateSightingResult = CreateSightingOk | CreateSightingBlocked;
 
 /* ------------------------------------------------------------------ */
 /* Service                                                             */
@@ -92,6 +103,26 @@ export async function createSightingFromImage(
 
   // 2. Recognition. mockSpecies is an optional mock-mode hint; ignored by real providers.
   const recognition = await providers.vision.recognize(imageUri, mockSpecies);
+
+  // 2b. De-duplication — a species is registered once. A re-catch returns the
+  // existing entry without creating a new record or crediting XP.
+  const dedup = evaluateDedup({
+    recognition,
+    existing: lifeDexStore.listSightings(),
+    location,
+    now: Date.now(),
+  });
+  if (dedup.alreadyDiscovered && dedup.existingSightingId !== undefined) {
+    return {
+      ok: true,
+      blocked: false,
+      duplicate: true,
+      sightingId: dedup.existingSightingId,
+      cardId: `card-${dedup.existingSightingId}`,
+      species: recognition.commonName,
+      sameSpotToday: dedup.sameSpotToday,
+    };
+  }
 
   // 3. Scoring (rarity / XP).
   const score = providers.rarityScoring.score({
@@ -154,5 +185,13 @@ export async function createSightingFromImage(
   // Supabase is disabled). Fire-and-forget so it never blocks the capture.
   void pushSighting(sighting);
 
-  return { ok: true, blocked: false, sightingId, cardId };
+  return {
+    ok: true,
+    blocked: false,
+    duplicate: false,
+    sightingId,
+    cardId,
+    species: recognition.commonName,
+    sameSpotToday: false,
+  };
 }

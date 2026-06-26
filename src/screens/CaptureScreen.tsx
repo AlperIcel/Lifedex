@@ -60,6 +60,7 @@ type PipelineState =
   | { phase: 'idle' }
   | { phase: 'running' }
   | { phase: 'blocked'; reasons: string[] }
+  | { phase: 'duplicate'; species: string; sameSpotToday: boolean }
   | { phase: 'error'; message: string };
 
 /* ------------------------------------------------------------------ */
@@ -92,9 +93,10 @@ function FramingHint(): React.ReactElement {
 interface PipelineOverlayProps {
   state: PipelineState;
   onDismiss: () => void;
+  onViewCollection: () => void;
 }
 
-function PipelineOverlay({ state, onDismiss }: PipelineOverlayProps): React.ReactElement | null {
+function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlayProps): React.ReactElement | null {
   if (state.phase === 'idle') return null;
 
   if (state.phase === 'running') {
@@ -125,6 +127,28 @@ function PipelineOverlay({ state, onDismiss }: PipelineOverlayProps): React.Reac
           </Text>
           <TouchableOpacity style={styles.overlayBtn} onPress={onDismiss}>
             <Text style={styles.overlayBtnText}>Try another photo</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (state.phase === 'duplicate') {
+    return (
+      <View style={styles.overlayContainer}>
+        <View style={styles.overlayCard}>
+          <Text style={styles.overlayIcon}>✅</Text>
+          <Text style={styles.overlayTitle}>Already discovered</Text>
+          <Text style={styles.overlayBody}>
+            {state.sameSpotToday
+              ? `You already logged ${state.species} near here today.`
+              : `${state.species} is already in your collection. Find a new species to earn XP!`}
+          </Text>
+          <TouchableOpacity style={styles.overlayBtn} onPress={onViewCollection}>
+            <Text style={styles.overlayBtnText}>View Collection</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.overlayBtnGhost} onPress={onDismiss}>
+            <Text style={styles.overlayBtnGhostText}>Keep exploring</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -272,6 +296,17 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
           return;
         }
 
+        if (result.duplicate) {
+          // Species already in the collection — no new card.
+          setPreviewUri(null);
+          setPipeline({
+            phase: 'duplicate',
+            species: result.species,
+            sameSpotToday: result.sameSpotToday,
+          });
+          return;
+        }
+
         setPipeline({ phase: 'idle' });
         setPreviewUri(null);
         navigation.navigate('Result', { sightingId: result.sightingId });
@@ -333,6 +368,13 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
     setPipeline({ phase: 'idle' });
     setPreviewUri(null);
   }, []);
+
+  /* ---------- Duplicate: jump to collection ---------- */
+  const handleViewCollection = useCallback(() => {
+    setPipeline({ phase: 'idle' });
+    setPreviewUri(null);
+    navigation.navigate('Tabs', { screen: 'Collection' });
+  }, [navigation]);
 
   /* ---------- Permission screens ---------- */
   if (!permission) {
@@ -438,8 +480,12 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         </Text>
       )}
 
-      {/* Pipeline overlay (processing / blocked / error) */}
-      <PipelineOverlay state={pipeline} onDismiss={handleDismiss} />
+      {/* Pipeline overlay (processing / blocked / duplicate / error) */}
+      <PipelineOverlay
+        state={pipeline}
+        onDismiss={handleDismiss}
+        onViewCollection={handleViewCollection}
+      />
     </View>
   );
 }
@@ -711,6 +757,15 @@ const styles = StyleSheet.create({
     ...typography.heading,
     color: colors.background,
     fontSize: 15,
+  },
+  overlayBtnGhost: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  overlayBtnGhostText: {
+    ...typography.body,
+    color: colors.textMuted,
   },
 
   /* Phase dots */

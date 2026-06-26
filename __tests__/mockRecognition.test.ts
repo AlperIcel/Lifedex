@@ -68,20 +68,22 @@ describe('createSightingFromImage — mockSpecies hint', () => {
   });
 
   it('persists a sighting matching the picked subject', async () => {
+    // 'dog' (Domestic Dog) is NOT in the seed, so this is a first discovery.
     const result = await createSightingFromImage({
       imageUri: URI,
-      mockSpecies: 'frog',
+      mockSpecies: 'dog',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.duplicate).toBe(false);
     const sighting = lifeDexStore.getSightingById(result.sightingId);
-    expect(sighting?.commonName).toBe('Common Frog');
+    expect(sighting?.commonName).toBe('Domestic Dog');
   });
 
   it('still persists EXACTLY one sighting and one card with a hint', async () => {
     const beforeS = lifeDexStore.listSightings().length;
     const beforeC = lifeDexStore.listCollection().length;
-    await createSightingFromImage({ imageUri: URI, mockSpecies: 'cat' });
+    await createSightingFromImage({ imageUri: URI, mockSpecies: 'dog' });
     expect(lifeDexStore.listSightings()).toHaveLength(beforeS + 1);
     expect(lifeDexStore.listCollection()).toHaveLength(beforeC + 1);
   });

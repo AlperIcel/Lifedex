@@ -38,14 +38,14 @@ beforeEach(() => {
 
 describe('createSightingFromImage — happy path', () => {
   it('returns { ok: true, blocked: false } for a clean image', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return; // type narrowing for TS
     expect(result.blocked).toBe(false);
   });
 
   it('returns a non-empty sightingId and cardId', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(typeof result.sightingId).toBe('string');
@@ -56,18 +56,18 @@ describe('createSightingFromImage — happy path', () => {
 
   it('persists EXACTLY ONE sighting above the baseline', async () => {
     const before = lifeDexStore.listSightings().length;
-    await createSightingFromImage({ imageUri: CLEAN_URI });
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(lifeDexStore.listSightings()).toHaveLength(before + 1);
   });
 
   it('persists EXACTLY ONE CollectionCard above the baseline', async () => {
     const before = lifeDexStore.listCollection().length;
-    await createSightingFromImage({ imageUri: CLEAN_URI });
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(lifeDexStore.listCollection()).toHaveLength(before + 1);
   });
 
   it('sightingId resolves via getSightingById', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -76,7 +76,7 @@ describe('createSightingFromImage — happy path', () => {
   });
 
   it('cardId resolves via getCardById', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const card = lifeDexStore.getCardById(result.cardId);
@@ -85,7 +85,7 @@ describe('createSightingFromImage — happy path', () => {
   });
 
   it('sightingId and cardId are cross-linked (card.sightingId === sightingId)', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const card = lifeDexStore.getCardById(result.cardId);
@@ -93,7 +93,7 @@ describe('createSightingFromImage — happy path', () => {
   });
 
   it('cardId follows the card-<sightingId> convention', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.cardId).toBe(`card-${result.sightingId}`);
@@ -106,7 +106,7 @@ describe('createSightingFromImage — happy path', () => {
 
 describe('createSightingFromImage — privacy', () => {
   it('persisted sighting has publicImageUri !== privatePhotoUri', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -114,7 +114,7 @@ describe('createSightingFromImage — privacy', () => {
   });
 
   it('privatePhotoUri matches the original imageUri (kept as evidence)', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -122,7 +122,7 @@ describe('createSightingFromImage — privacy', () => {
   });
 
   it('publicImageUri starts with mock-card:// in mock mode', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -136,7 +136,7 @@ describe('createSightingFromImage — privacy', () => {
 
 describe('createSightingFromImage — location', () => {
   it('persists a non-null publicLocation when no GPS is supplied', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -150,6 +150,7 @@ describe('createSightingFromImage — location', () => {
   it('incorporates a supplied GeoPoint', async () => {
     const result = await createSightingFromImage({
       imageUri: CLEAN_URI,
+      mockSpecies: 'dog',
       location: { lat: 48.8566, lng: 2.3522 },
     });
     expect(result.ok).toBe(true);
@@ -163,26 +164,43 @@ describe('createSightingFromImage — location', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Two calls → two distinct records                                   */
+/* Species-level de-duplication                                        */
 /* ------------------------------------------------------------------ */
 
-describe('createSightingFromImage — no accidental deduplication', () => {
-  it('two calls with the same URI produce two distinct sighting ids', async () => {
-    const r1 = await createSightingFromImage({ imageUri: CLEAN_URI });
-    const r2 = await createSightingFromImage({ imageUri: CLEAN_URI });
+describe('createSightingFromImage — species dedup', () => {
+  it('first catch is a new discovery; second catch of the same species is a duplicate', async () => {
+    const r1 = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    const r2 = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
     if (!r1.ok || !r2.ok) return;
-    expect(r1.sightingId).not.toBe(r2.sightingId);
+    expect(r1.duplicate).toBe(false);
+    expect(r2.duplicate).toBe(true);
+    // The duplicate points back at the existing entry.
+    expect(r2.sightingId).toBe(r1.sightingId);
+    expect(r2.species).toBe('Domestic Dog');
   });
 
-  it('two calls with same URI produce two distinct card ids', async () => {
-    const r1 = await createSightingFromImage({ imageUri: CLEAN_URI });
-    const r2 = await createSightingFromImage({ imageUri: CLEAN_URI });
-    expect(r1.ok).toBe(true);
-    expect(r2.ok).toBe(true);
-    if (!r1.ok || !r2.ok) return;
-    expect(r1.cardId).not.toBe(r2.cardId);
+  it('a duplicate does NOT persist a second record', async () => {
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    const afterFirst = lifeDexStore.listSightings().length;
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(lifeDexStore.listSightings()).toHaveLength(afterFirst);
+  });
+
+  it('a duplicate does NOT credit XP', async () => {
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    const xpAfterFirst = lifeDexStore.getProfile().xp;
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(lifeDexStore.getProfile().xp).toBe(xpAfterFirst);
+  });
+
+  it('catching a species already in the seed is an immediate duplicate', async () => {
+    // 'cat' maps to Domestic Cat, which is in the seed collection.
+    const r = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'cat' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.duplicate).toBe(true);
   });
 });
 
@@ -246,7 +264,7 @@ describe('createSightingFromImage — moderation blocked', () => {
 
 describe('createSightingFromImage — data integrity', () => {
   it('persisted sighting has valid rarity', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -254,7 +272,7 @@ describe('createSightingFromImage — data integrity', () => {
   });
 
   it('persisted sighting has non-negative XP', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -262,7 +280,7 @@ describe('createSightingFromImage — data integrity', () => {
   });
 
   it('persisted sighting has a non-empty commonName', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -270,7 +288,7 @@ describe('createSightingFromImage — data integrity', () => {
   });
 
   it('persisted sighting moderation.allowed is true on success path', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);
@@ -278,7 +296,7 @@ describe('createSightingFromImage — data integrity', () => {
   });
 
   it('collectionCard rarity matches persisted sighting rarity', async () => {
-    const result = await createSightingFromImage({ imageUri: CLEAN_URI });
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const sighting = lifeDexStore.getSightingById(result.sightingId);

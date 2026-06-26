@@ -23,7 +23,7 @@ This document tracks what is currently mocked versus real, and the ordered backl
 | Map rendering | Mock fallback by default | Native `react-native-maps` renders a blank tile layer in Expo Go / emulators without a Google Maps key, so `MapScreen` shows `MockMapView` — a stylised surface that projects sightings (pins for visible, **circles-only for protected**, no exact point) using their bounding box. Native path is gated behind `env.useNativeMaps` (false in mock mode). Set `MAPS_PROVIDER` to a real provider + key + dev build to enable native. |
 | Collection data | Mock (reactive) | `CollectionScreen` reads `useLifeDexStore().collectionCards` — seeded with 15 cards + grows with captures. No Supabase query. |
 | Leaderboard data | Mock | `MOCK_LEADERBOARD` seeded into `lifeDexStore` from `src/screens/leaderboard/mockData.ts` — 15 static entries. |
-| Duplicate detection | Not built | `ScoreInput.isDuplicate` is always `false` in mock mode. |
+| Duplicate detection | Species-level (built) | `src/domain/dedup.ts` registers each species once. A re-catch of a species already in your collection returns a `duplicate` result — no new card, no XP — and the Capture screen shows "Already discovered" (with a "you logged this here today" variant via `sameSpotToday`, same species + ~500 m + ~1 day). Matching is by scientific name, else common name. Individual-animal re-ID is intentionally out of scope. Photo-hash (same image re-upload) is a later add. |
 | Streak tracking | Not built | `ScoreInput.streak` is always `0` in mock mode. |
 | Push notifications | Not built | No Expo Notifications integration yet. |
 | EAS build | Not built | No `eas.json` config. |
