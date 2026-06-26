@@ -450,10 +450,19 @@ export default function MapScreen({ navigation }: Props) {
     [filtered],
   );
 
-  const clusters = useMemo(
-    () => clusterSightings(visibleSightings, region),
-    [visibleSightings, region],
-  );
+  const clusters = useMemo(() => {
+    // Native map: cluster by on-screen proximity. Mock map: one pin per sighting
+    // (the fuzzed seed coords collapse to one spot, so geo-clustering would hide
+    // everything behind a single pin — MockMapView lays them out itself).
+    if (env.useNativeMaps) return clusterSightings(visibleSightings, region);
+    return visibleSightings.map((s) => ({
+      id: s.id,
+      lat: s.publicLocation.lat,
+      lng: s.publicLocation.lng,
+      sightings: [s],
+      rarity: s.rarity,
+    }));
+  }, [visibleSightings, region]);
 
   const selectedCluster = useMemo(
     () => clusters.find((c) => c.id === selectedClusterId) ?? null,

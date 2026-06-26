@@ -12,8 +12,9 @@ import React from 'react';
 import { render } from '@testing-library/react-native';
 
 import MockMapView, {
-  computeBounds,
-  projectPoint,
+  placeMarker,
+  hashSeed,
+  CENTRE_CLEAR_RADIUS,
   type Box,
   type ClusteredPin,
 } from '../src/components/MockMapView';
@@ -24,7 +25,13 @@ import { env } from '../src/config/env';
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const BOX: Box = { width: 400, height: 800, padTop: 100, padBottom: 100, padX: 40 };
+const BOX: Box = { width: 400, height: 800, padTop: 150, padBottom: 188, padX: 52 };
+
+function boxCentre(b: Box): { cx: number; cy: number } {
+  const innerW = b.width - b.padX * 2;
+  const innerH = b.height - b.padTop - b.padBottom;
+  return { cx: b.padX + innerW / 2, cy: b.padTop + innerH / 2 };
+}
 
 function cluster(id: string, lat: number, lng: number): ClusteredPin {
   return {
@@ -60,47 +67,47 @@ describe('env.useNativeMaps', () => {
 /* Projection helpers                                                */
 /* ------------------------------------------------------------------ */
 
-describe('computeBounds', () => {
-  it('returns the min/max of the points', () => {
-    const b = computeBounds([
-      { lat: 1, lng: 2 },
-      { lat: 5, lng: -3 },
-      { lat: 3, lng: 4 },
-    ]);
-    expect(b).toEqual({ minLat: 1, maxLat: 5, minLng: -3, maxLng: 4 });
+describe('hashSeed', () => {
+  it('is deterministic and non-negative', () => {
+    expect(hashSeed('abc')).toBe(hashSeed('abc'));
+    expect(hashSeed('abc')).toBeGreaterThanOrEqual(0);
   });
 
-  it('returns a small fallback box when empty', () => {
-    const b = computeBounds([]);
-    expect(b.maxLat).toBeGreaterThan(b.minLat);
-    expect(b.maxLng).toBeGreaterThan(b.minLng);
+  it('differs for different inputs', () => {
+    expect(hashSeed('cat')).not.toBe(hashSeed('dog'));
   });
 });
 
-describe('projectPoint', () => {
-  const bounds = { minLat: 0, maxLat: 10, minLng: 0, maxLng: 10 };
-
-  it('keeps points inside the padded box', () => {
-    const p = projectPoint(5, 5, bounds, BOX);
-    expect(p.x).toBeGreaterThanOrEqual(BOX.padX);
-    expect(p.x).toBeLessThanOrEqual(BOX.width - BOX.padX);
-    expect(p.y).toBeGreaterThanOrEqual(BOX.padTop);
-    expect(p.y).toBeLessThanOrEqual(BOX.height - BOX.padBottom);
+describe('placeMarker', () => {
+  it('is deterministic for the same inputs', () => {
+    const a = placeMarker(3, hashSeed('x'), 12, BOX);
+    const b = placeMarker(3, hashSeed('x'), 12, BOX);
+    expect(a).toEqual(b);
   });
 
-  it('inverts latitude (north is up / smaller y)', () => {
-    const north = projectPoint(10, 5, bounds, BOX);
-    const south = projectPoint(0, 5, bounds, BOX);
-    expect(north.y).toBeLessThan(south.y);
+  it('keeps markers inside the padded box', () => {
+    for (let i = 0; i < 15; i++) {
+      const p = placeMarker(i, hashSeed(`id-${i}`), 15, BOX);
+      expect(p.x).toBeGreaterThanOrEqual(BOX.padX);
+      expect(p.x).toBeLessThanOrEqual(BOX.width - BOX.padX);
+      expect(p.y).toBeGreaterThanOrEqual(BOX.padTop);
+      expect(p.y).toBeLessThanOrEqual(BOX.height - BOX.padBottom);
+    }
   });
 
-  it('centres a zero-span axis instead of dividing by zero', () => {
-    const single = { minLat: 4, maxLat: 4, minLng: 7, maxLng: 7 };
-    const p = projectPoint(4, 7, single, BOX);
-    expect(Number.isFinite(p.x)).toBe(true);
-    expect(Number.isFinite(p.y)).toBe(true);
-    // centred horizontally and vertically
-    expect(p.x).toBeCloseTo(BOX.padX + (BOX.width - BOX.padX * 2) / 2);
+  it('keeps the centre clear for the player avatar', () => {
+    const { cx, cy } = boxCentre(BOX);
+    for (let i = 0; i < 15; i++) {
+      const p = placeMarker(i, hashSeed(`id-${i}`), 15, BOX);
+      const dist = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
+      expect(dist).toBeGreaterThanOrEqual(CENTRE_CLEAR_RADIUS - 1);
+    }
+  });
+
+  it('spreads markers apart (different positions per index)', () => {
+    const p0 = placeMarker(0, hashSeed('a'), 8, BOX);
+    const p1 = placeMarker(1, hashSeed('b'), 8, BOX);
+    expect(p0).not.toEqual(p1);
   });
 });
 
