@@ -22,6 +22,7 @@ import {
   Image,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -36,6 +37,8 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 
 import type { GeoPoint } from '@/domain/types';
 import { createSightingFromImage } from '@/services/sightingPipeline';
+import { MOCK_HINTS, type MockHint } from '@/providers/mock/mockVision';
+import { env } from '@/config/env';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { colors, radius, spacing, typography } from '@/theme/theme';
 
@@ -146,6 +149,66 @@ function PipelineOverlay({ state, onDismiss }: PipelineOverlayProps): React.Reac
   return null;
 }
 
+/* Emoji + label for each mock test subject. */
+const MOCK_HINT_META: Record<MockHint, { icon: string; label: string }> = {
+  cat: { icon: '🐱', label: 'Cat' },
+  dog: { icon: '🐶', label: 'Dog' },
+  frog: { icon: '🐸', label: 'Frog' },
+  bird: { icon: '🐦', label: 'Bird' },
+  tree: { icon: '🌳', label: 'Tree' },
+  flower: { icon: '🌼', label: 'Flower' },
+  mushroom: { icon: '🍄', label: 'Mushroom' },
+};
+
+interface MockPickerBarProps {
+  selected: MockHint | null;
+  onSelect: (hint: MockHint | null) => void;
+}
+
+/**
+ * Mock-mode only: lets the tester pick a predictable species instead of the
+ * hash-random simulated result. "Auto" (null) falls back to the deterministic
+ * hash. Hidden entirely once real AI recognition is wired up (env.isMockAi).
+ */
+function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactElement {
+  return (
+    <View style={styles.mockBar} pointerEvents="box-none">
+      <Text style={styles.mockBarTitle}>
+        Simulated result — real AI recognition not connected yet
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.mockChipRow}
+      >
+        <TouchableOpacity
+          style={[styles.mockChip, selected === null && styles.mockChipActive]}
+          onPress={() => onSelect(null)}
+          accessibilityLabel="Auto-detect (random mock)"
+        >
+          <Text style={styles.mockChipIcon}>🎲</Text>
+          <Text style={styles.mockChipLabel}>Auto</Text>
+        </TouchableOpacity>
+        {MOCK_HINTS.map((hint) => {
+          const meta = MOCK_HINT_META[hint];
+          const active = selected === hint;
+          return (
+            <TouchableOpacity
+              key={hint}
+              style={[styles.mockChip, active && styles.mockChipActive]}
+              onPress={() => onSelect(hint)}
+              accessibilityLabel={`Test subject: ${meta.label}`}
+            >
+              <Text style={styles.mockChipIcon}>{meta.icon}</Text>
+              <Text style={styles.mockChipLabel}>{meta.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Main screen                                                         */
 /* ------------------------------------------------------------------ */
@@ -155,6 +218,8 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [pipeline, setPipeline] = useState<PipelineState>({ phase: 'idle' });
+  // Mock-mode test-subject pick (null = deterministic auto). Ignored by real AI.
+  const [mockSpecies, setMockSpecies] = useState<MockHint | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   // Shutter button animation
@@ -190,7 +255,12 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       }
 
       try {
-        const result = await createSightingFromImage({ imageUri, location });
+        const result = await createSightingFromImage({
+          imageUri,
+          location,
+          // Mock-only hint; undefined in real mode or when "Auto" is selected.
+          mockSpecies: env.isMockAi && mockSpecies !== null ? mockSpecies : undefined,
+        });
 
         if (!result.ok) {
           // Moderation blocked
@@ -209,7 +279,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         setPipeline({ phase: 'error', message: 'An unexpected error occurred.' });
       }
     },
-    [navigation],
+    [navigation, mockSpecies],
   );
 
   /* ---------- Capture ---------- */
@@ -324,6 +394,11 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
 
       {/* Framing guide */}
       {!captureActive && <FramingHint />}
+
+      {/* Mock-mode test-subject picker */}
+      {env.isMockAi && !captureActive && (
+        <MockPickerBar selected={mockSpecies} onSelect={setMockSpecies} />
+      )}
 
       {/* Bottom controls */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.xl, screenH * 0.05) }]}>
@@ -498,6 +573,53 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     overflow: 'hidden',
     marginTop: '46%',
+  },
+
+  /* Mock picker bar */
+  mockBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 150,
+    paddingHorizontal: spacing.md,
+  },
+  mockBarTitle: {
+    ...typography.caption,
+    color: colors.warning,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    alignSelf: 'center',
+    marginBottom: spacing.sm,
+  },
+  mockChipRow: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  mockChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    minWidth: 56,
+  },
+  mockChipActive: {
+    borderColor: colors.teal,
+    backgroundColor: colors.teal + '33',
+  },
+  mockChipIcon: {
+    fontSize: 22,
+  },
+  mockChipLabel: {
+    ...typography.label,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 
   /* Bottom controls */

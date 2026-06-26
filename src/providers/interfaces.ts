@@ -17,7 +17,13 @@ import type {
 
 /** Identifies what a photo contains (category, species, confidence, status). */
 export interface VisionRecognitionProvider {
-  recognize(imageUri: string): Promise<RecognitionResult>;
+  /**
+   * @param imageUri  The captured photo URI.
+   * @param hint      Optional mock-mode hint (e.g. 'cat', 'frog') used only by
+   *                  the mock provider to return a chosen test subject. Real
+   *                  providers ignore it.
+   */
+  recognize(imageUri: string, hint?: string): Promise<RecognitionResult>;
 }
 
 /** Decides whether an image is publishable; strips/blocks private regions. */

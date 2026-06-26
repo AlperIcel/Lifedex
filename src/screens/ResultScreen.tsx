@@ -36,6 +36,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '@/navigation/types';
 import type { CardMetadata, Sighting } from '@/domain/types';
+import { env } from '@/config/env';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import {
   colors,
@@ -499,6 +500,15 @@ export default function ResultScreen({ route, navigation }: Props) {
           <Text style={styles.scientificName}>{sighting.scientificName}</Text>
         )}
 
+        {/* ---- Mock recognition notice ---- */}
+        {env.isMockAi && (
+          <View style={styles.mockBanner}>
+            <Text style={styles.mockBannerText}>
+              🧪 Mock Detection — real AI recognition not connected yet
+            </Text>
+          </View>
+        )}
+
         {/* ---- Status badges ---- */}
         <StatusBadges sighting={sighting} />
 
@@ -650,6 +660,24 @@ const styles = StyleSheet.create({
   badgeText: {
     ...typography.label,
     letterSpacing: 0.5,
+  },
+
+  /* ---- Mock recognition banner ---- */
+  mockBanner: {
+    alignSelf: 'center',
+    backgroundColor: colors.warning + '1A',
+    borderWidth: 1,
+    borderColor: colors.warning + '55',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  mockBannerText: {
+    ...typography.label,
+    color: colors.warning,
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
 
   /* ---- Location note ---- */

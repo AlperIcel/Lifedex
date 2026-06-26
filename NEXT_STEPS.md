@@ -8,7 +8,7 @@ This document tracks what is currently mocked versus real, and the ordered backl
 
 | Capability | Status | Mock behaviour / notes |
 |---|---|---|
-| Vision / species recognition | Mock | `MockVisionProvider` — deterministic djb2 hash of image URI selects from a 15-species table. Same URI always returns same species. |
+| Vision / species recognition | Mock (clearly labelled) | `MockVisionProvider` — deterministic djb2 hash of image URI selects from the species table. Same URI always returns same species. **The simulated nature is shown in-app**: a "Simulated result" banner on `ResultScreen` and a test-subject picker (Auto/Cat/Dog/Frog/Bird/Tree/Flower/Mushroom) on `CaptureScreen`, both gated on `env.isMockAi`. The picker passes an optional `hint`/`mockSpecies` that only the mock provider reads — **real AI recognition arrives as a pure provider swap** (`getProviders()` returns a real adapter; the hint is ignored, banner and picker disappear). |
 | Image moderation | Mock | `MockModerationProvider` — reads URI keyword substrings (`face`, `person`, `plate`, `blur`, `dark`, `interior`) to simulate detector signals. |
 | Card image generation | Mock | `MockCardGenProvider` — returns `mock-card://<category>/<slug>/<rarity>/<xp>`. `MockCardImage` component renders an emoji placeholder. No network call. |
 | Location / GPS | Real (Expo Location) | `Location.getCurrentPositionAsync()` called by `CaptureScreen` before `createSightingFromImage`. Falls back to `{lat:0,lng:0}` if permission denied. |

@@ -62,6 +62,14 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     captiveStatus: 'domestic',
     sensitivity: 'none',
   },
+  {
+    category: 'animal',
+    commonName: 'Domestic Dog',
+    scientificName: 'Canis familiaris',
+    confidence: 0.96,
+    captiveStatus: 'domestic',
+    sensitivity: 'none',
+  },
   // ── plants ─────────────────────────────────────────────────────────────
   {
     category: 'plant',
@@ -150,8 +158,53 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
+/** Look up a species table entry by its common name. */
+function findSpecies(commonName: string): SpeciesEntry | undefined {
+  return SPECIES_TABLE.find((e) => e.commonName === commonName);
+}
+
+/**
+ * Mock-only hint keys → a concrete species entry. Lets the Capture screen offer
+ * a manual "test subject" picker so the simulated result is predictable instead
+ * of hash-random. Real providers ignore hints entirely.
+ *
+ * `MOCK_HINTS` is the source of truth the UI reads to render its picker.
+ */
+export const MOCK_HINTS = [
+  'cat',
+  'dog',
+  'frog',
+  'bird',
+  'tree',
+  'flower',
+  'mushroom',
+] as const;
+
+export type MockHint = (typeof MOCK_HINTS)[number];
+
+const HINT_TO_SPECIES: Record<MockHint, string> = {
+  cat: 'Domestic Cat',
+  dog: 'Domestic Dog',
+  frog: 'Common Frog',
+  bird: 'European Robin',
+  tree: 'English Oak',
+  flower: 'Common Dandelion',
+  mushroom: 'Fly Agaric',
+};
+
 export class MockVisionProvider implements VisionRecognitionProvider {
-  async recognize(imageUri: string): Promise<RecognitionResult> {
+  async recognize(imageUri: string, hint?: string): Promise<RecognitionResult> {
+    // Manual mock pick: if the hint maps to a known species, return it.
+    if (hint !== undefined) {
+      const key = hint.toLowerCase();
+      const mappedName = (HINT_TO_SPECIES as Record<string, string | undefined>)[key];
+      const hinted = mappedName !== undefined ? findSpecies(mappedName) : undefined;
+      if (hinted !== undefined) {
+        return { ...hinted };
+      }
+      // Unknown hint → fall through to deterministic hashing.
+    }
+
     const index = hashString(imageUri) % SPECIES_TABLE.length;
     const entry = SPECIES_TABLE[index];
     if (entry === undefined) {

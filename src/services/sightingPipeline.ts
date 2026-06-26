@@ -35,6 +35,12 @@ export interface CreateSightingInput {
   imageUri: string;
   /** Optional true GPS point; fuzzed before storage. */
   location?: GeoPoint;
+  /**
+   * Optional MOCK-MODE hint (e.g. 'cat', 'frog'). Lets the Capture screen pick a
+   * predictable test subject while recognition is simulated. Real vision
+   * providers ignore this — it has no effect once a real provider is wired up.
+   */
+  mockSpecies?: string;
 }
 
 export interface CreateSightingSuccess {
@@ -66,7 +72,7 @@ export type CreateSightingResult = CreateSightingSuccess | CreateSightingBlocked
 export async function createSightingFromImage(
   input: CreateSightingInput,
 ): Promise<CreateSightingResult> {
-  const { imageUri, location } = input;
+  const { imageUri, location, mockSpecies } = input;
   const providers = getProviders();
 
   // The private evidence image is "stored" as-is in mock mode (the URI is the
@@ -83,8 +89,8 @@ export async function createSightingFromImage(
     return { ok: false, blocked: true, reasons };
   }
 
-  // 2. Recognition.
-  const recognition = await providers.vision.recognize(imageUri);
+  // 2. Recognition. mockSpecies is an optional mock-mode hint; ignored by real providers.
+  const recognition = await providers.vision.recognize(imageUri, mockSpecies);
 
   // 3. Scoring (rarity / XP).
   const score = providers.rarityScoring.score({
