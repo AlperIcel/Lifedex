@@ -40,6 +40,8 @@ import type { Category, Rarity, Sighting } from '@/domain/types';
 import { colors, radius, rarityColors, spacing, typography } from '@/theme/theme';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
+import { env } from '@/config/env';
+import MockMapView, { type ClusteredPin } from '@/components/MockMapView';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                            */
@@ -182,13 +184,7 @@ function dominantRarity(sightings: Sighting[]): Rarity {
 /* Clustering                                                           */
 /* ------------------------------------------------------------------ */
 
-interface ClusteredPin {
-  id: string;
-  lat: number;
-  lng: number;
-  sightings: Sighting[];
-  rarity: Rarity;
-}
+// ClusteredPin is defined in and shared with MockMapView (imported above).
 
 /**
  * Project a lat/lng onto the screen so we can compute pixel distances
@@ -553,64 +549,78 @@ export default function MapScreen({ navigation }: Props) {
   return (
     <View style={styles.root}>
       {/* ── Map ──────────────────────────────────────────────── */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={INITIAL_REGION}
-        onRegionChangeComplete={setRegion}
-        onPress={handleMapPress}
-        customMapStyle={MAP_STYLE}
-        showsUserLocation
-        showsMyLocationButton={false}
-        showsCompass={false}
-        showsScale={false}
-        rotateEnabled={false}
-        pitchEnabled={false}
-        mapType={Platform.OS === 'android' ? 'none' : 'standard'}
-      >
-        {/* ── Fuzz circles: hidden / protected species ── */}
-        {hiddenSightings.map((s) => (
-          <FuzzCircle
-            key={s.id}
-            sighting={s}
-            selected={selectedHiddenId === s.id}
-            onPress={() => handleFuzzPress(s)}
-          />
-        ))}
-
-        {/* ── Subtle precision ring for non-hidden sightings ── */}
-        {visibleSightings.map((s) => (
-          <Circle
-            key={`ring-${s.id}`}
-            center={{
-              latitude: s.publicLocation.lat,
-              longitude: s.publicLocation.lng,
-            }}
-            radius={s.publicLocation.precisionMeters}
-            strokeWidth={0.8}
-            strokeColor={rarityColors[s.rarity] + '30'}
-            fillColor="transparent"
-          />
-        ))}
-
-        {/* ── Clustered pin markers ── */}
-        {clusters.map((cluster) => (
-          <Marker
-            key={cluster.id}
-            coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
-            onPress={() => handlePinPress(cluster)}
-            tracksViewChanges={false}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <Pin
-              rarity={cluster.rarity}
-              count={cluster.sightings.length}
-              selected={selectedClusterId === cluster.id}
-              onPress={() => handlePinPress(cluster)}
+      {/* Native maps render blank without a Google Maps key (Expo Go / emulator),
+          so mock mode uses the MockMapView fallback. Toggle via env.useNativeMaps. */}
+      {env.useNativeMaps ? (
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={INITIAL_REGION}
+          onRegionChangeComplete={setRegion}
+          onPress={handleMapPress}
+          customMapStyle={MAP_STYLE}
+          showsUserLocation
+          showsMyLocationButton={false}
+          showsCompass={false}
+          showsScale={false}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+        >
+          {/* ── Fuzz circles: hidden / protected species ── */}
+          {hiddenSightings.map((s) => (
+            <FuzzCircle
+              key={s.id}
+              sighting={s}
+              selected={selectedHiddenId === s.id}
+              onPress={() => handleFuzzPress(s)}
             />
-          </Marker>
-        ))}
-      </MapView>
+          ))}
+
+          {/* ── Subtle precision ring for non-hidden sightings ── */}
+          {visibleSightings.map((s) => (
+            <Circle
+              key={`ring-${s.id}`}
+              center={{
+                latitude: s.publicLocation.lat,
+                longitude: s.publicLocation.lng,
+              }}
+              radius={s.publicLocation.precisionMeters}
+              strokeWidth={0.8}
+              strokeColor={rarityColors[s.rarity] + '30'}
+              fillColor="transparent"
+            />
+          ))}
+
+          {/* ── Clustered pin markers ── */}
+          {clusters.map((cluster) => (
+            <Marker
+              key={cluster.id}
+              coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
+              onPress={() => handlePinPress(cluster)}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 1 }}
+            >
+              <Pin
+                rarity={cluster.rarity}
+                count={cluster.sightings.length}
+                selected={selectedClusterId === cluster.id}
+                onPress={() => handlePinPress(cluster)}
+              />
+            </Marker>
+          ))}
+        </MapView>
+      ) : (
+        <MockMapView
+          clusters={clusters}
+          hiddenSightings={hiddenSightings}
+          selectedClusterId={selectedClusterId}
+          selectedHiddenId={selectedHiddenId}
+          onClusterPress={handlePinPress}
+          onHiddenPress={handleFuzzPress}
+          onBackgroundPress={handleMapPress}
+        />
+      )}
 
       {/* ── Top overlay ──────────────────────────────────────── */}
       <View style={styles.topOverlay} pointerEvents="box-none">

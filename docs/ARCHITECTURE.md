@@ -240,6 +240,17 @@ Type safety: `RootStackParamList` nests tabs under a `Tabs` route using `Navigat
 
 ---
 
+## Map rendering (native vs mock fallback)
+
+`MapScreen` branches on `env.useNativeMaps`:
+
+- **Native (`useNativeMaps === true`)** — renders `react-native-maps` with the dark `MAP_STYLE`, clustered `Marker` pins, and `Circle` overlays for fuzzed/protected zones. Requires a Google Maps key + a dev build; blank in Expo Go without one.
+- **Mock fallback (default)** — renders `components/MockMapView`, a dependency-free surface that projects sightings into a padded box from their own bounding box (`computeBounds` + `projectPoint`, both pure/unit-tested). Visible sightings become pins; **protected/hidden sightings become circles only — never an exact pin**, mirroring the native privacy contract. Clustering and the filter/sheet logic stay in `MapScreen`; the fallback is presentation-only.
+
+This keeps the Map screen usable for local MVP testing without a maps key, and the swap to production maps is a single env flag — no screen rewrite.
+
+---
+
 ## Risk list
 
 | Risk | Severity | Mitigations in place | Remaining gap |

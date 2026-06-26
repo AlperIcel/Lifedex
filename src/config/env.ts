@@ -61,6 +61,13 @@ export const env = {
   isMockAi,
   isMockMaps,
   mockMode: isMockAi && isMockMaps,
+  /**
+   * Render the native react-native-maps view. FALSE in mock mode (the default)
+   * because native maps render a blank tile layer in Expo Go / emulators with no
+   * Google Maps API key — the app shows the MockMapView fallback instead. Set
+   * MAPS_PROVIDER to a real provider (with a key + dev build) to enable native.
+   */
+  useNativeMaps: !isMockMaps,
 } as const;
 
 export type Env = typeof env;

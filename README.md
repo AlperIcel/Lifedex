@@ -89,7 +89,7 @@ LifeDex/
 │   │   ├── ResultScreen.tsx       # Read-only: getSightingById + getCardById from store
 │   │   ├── CollectionScreen.tsx   # Reads store.collectionCards; navigates CardDetail by card.id
 │   │   ├── CardDetailScreen.tsx   # Reads store via getCardById + getSightingById
-│   │   ├── MapScreen.tsx          # Reads store.sightings (reactive); fuzzed pins
+│   │   ├── MapScreen.tsx          # Reads store.sightings (reactive); native maps OR MockMapView fallback
 │   │   ├── LeaderboardScreen.tsx  # Reads store.leaderboardEntries + currentUserId
 │   │   ├── sightingStore.ts       # Thin shim -> lifeDexStore (keep for legacy imports)
 │   │   ├── mock/
@@ -199,7 +199,7 @@ All variables are optional in mock mode. The app runs fully offline with no keys
 | `SUPABASE_URL` | Only when not mocking | — | Supabase project URL (`https://<ref>.supabase.co`) |
 | `SUPABASE_ANON_KEY` | Only when not mocking | — | Supabase anon/public key |
 | `AI_PROVIDER` | No | `mock` | Vision + moderation + card-gen backend. `mock` = no keys, deterministic. Future values: `google`, `openai`, `replicate`, etc. |
-| `MAPS_PROVIDER` | No | `mock` | Map tile provider. `mock` = react-native-maps with no token. Future: `google` (needs `GOOGLE_MAPS_API_KEY`). |
+| `MAPS_PROVIDER` | No | `mock` | `mock` = `MockMapView` fallback (stylised surface, no native render, no token — native maps are blank in Expo Go without a key). A real value (e.g. `google`, needs `GOOGLE_MAPS_API_KEY` + dev build) flips `env.useNativeMaps` and renders native `react-native-maps`. |
 | `GOOGLE_MAPS_API_KEY` | Only when `MAPS_PROVIDER=google` | — | Google Maps SDK key for Android + iOS |
 
 Variables are read by `src/config/env.ts` from both `process.env` and `expo-constants` (`expoConfig.extra`). Set them in `.env` for local development or in the `extra` block of `app.json` for CI/EAS builds.

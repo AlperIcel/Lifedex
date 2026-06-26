@@ -19,6 +19,7 @@ This document tracks what is currently mocked versus real, and the ordered backl
 | App state / storage | Mock (in-memory) | `useLifeDexStore` singleton — seeded from 15-species table at startup; cleared on app reload; no Supabase writes. |
 | Auth | Not built | No sign-in flow. `currentUserId` is hardcoded `'mock-user-001'`. Supabase Auth is wired in schema/policies but the app has no login screen yet. |
 | Map data | Mock (reactive) | `MapScreen` reads `useLifeDexStore().sightings` — reactive, includes newly captured sightings within the session. Seeded with 15 entries. No Supabase query. |
+| Map rendering | Mock fallback by default | Native `react-native-maps` renders a blank tile layer in Expo Go / emulators without a Google Maps key, so `MapScreen` shows `MockMapView` — a stylised surface that projects sightings (pins for visible, **circles-only for protected**, no exact point) using their bounding box. Native path is gated behind `env.useNativeMaps` (false in mock mode). Set `MAPS_PROVIDER` to a real provider + key + dev build to enable native. |
 | Collection data | Mock (reactive) | `CollectionScreen` reads `useLifeDexStore().collectionCards` — seeded with 15 cards + grows with captures. No Supabase query. |
 | Leaderboard data | Mock | `MOCK_LEADERBOARD` seeded into `lifeDexStore` from `src/screens/leaderboard/mockData.ts` — 15 static entries. |
 | Duplicate detection | Not built | `ScoreInput.isDuplicate` is always `false` in mock mode. |
@@ -102,8 +103,8 @@ The consolidated store makes this a single swap point: `lifeDexStore.addSighting
 **Steps:**
 - Obtain a Google Maps API key with Maps SDK for Android and Maps SDK for iOS enabled.
 - Add `GOOGLE_MAPS_API_KEY` to `.env` and to `app.json` under `android.config.googleMaps.apiKey` and `ios.config.googleMapsApiKey`.
-- Set `MAPS_PROVIDER=google` in `.env`.
-- `MapScreen.tsx` uses `react-native-maps` which reads the key from `app.json` automatically.
+- Set `MAPS_PROVIDER=google` in `.env` — this flips `env.useNativeMaps` to `true`, so `MapScreen` renders native `react-native-maps` instead of the `MockMapView` fallback.
+- `MapScreen.tsx` uses `react-native-maps` which reads the key from `app.json` automatically. Build a dev client (`npx expo run:android`) — native maps do not render in Expo Go without a key.
 
 ---
 
