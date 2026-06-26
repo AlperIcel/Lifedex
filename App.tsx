@@ -13,12 +13,13 @@
  */
 
 import 'react-native-gesture-handler';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, type Theme } from '@react-navigation/native';
 import { colors } from './src/theme/theme';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { lifeDexStore } from './src/store/useLifeDexStore';
 
 /**
  * Navigation theme that matches the LifeDex dark-nature palette.
@@ -37,6 +38,11 @@ const NAV_THEME: Theme = {
 };
 
 export default function App(): React.JSX.Element {
+  // Restore persisted captures on startup (seed shows immediately, then merges).
+  useEffect(() => {
+    void lifeDexStore.hydrate();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor={colors.background} />

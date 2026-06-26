@@ -39,6 +39,11 @@ import {
   MOCK_CURRENT_USER_ID,
   type LeaderboardEntry,
 } from '@/screens/leaderboard/mockData';
+import {
+  loadUserCaptures,
+  saveUserCaptures,
+  type PersistedCapture,
+} from './persistence';
 
 /* ------------------------------------------------------------------ */
 /* Public state types                                                  */
@@ -243,6 +248,12 @@ class LifeDexStore {
     this.state.sightings.map((s) => [s.id, s]),
   );
 
+  /** User-created captures only (NOT seed) — the persisted set. Newest first. */
+  private userCaptures: PersistedCapture[] = [];
+
+  /** Tracks the latest persist write so tests/callers can await it via flush(). */
+  private persistPromise: Promise<void> = Promise.resolve();
+
   getSnapshot = (): LifeDexState => this.state;
 
   subscribe = (listener: Listener): (() => void) => {
@@ -264,9 +275,25 @@ class LifeDexStore {
   /* ----------------------------- Actions ---------------------------- */
 
   /**
+   * Apply a new capture to state (no emit, no persist). Caller MUST have checked
+   * the id is not already present. Prepends the sighting/card and credits XP.
+   */
+  private applyCapture(sighting: Sighting, card: CollectionCard): void {
+    const newXp = this.state.profile.xp + sighting.xp;
+    this.sightingIndex.set(sighting.id, sighting);
+    this.state = {
+      ...this.state,
+      profile: { ...this.state.profile, xp: newXp, level: xpToLevel(newXp) },
+      sightings: [sighting, ...this.state.sightings],
+      collectionCards: [card, ...this.state.collectionCards],
+    };
+  }
+
+  /**
    * Persist exactly one Sighting + one CollectionCard and credit XP.
    * Idempotent on sighting id. If `card` is omitted it is derived from the
-   * sighting. Returns the persisted ids.
+   * sighting. The capture is also written to local storage so it survives an
+   * app restart (best-effort; never blocks). Returns the persisted ids.
    */
   addSighting(sighting: Sighting, card?: CollectionCard): { sightingId: string; cardId: string } {
     const existing = this.sightingIndex.get(sighting.id);
@@ -279,25 +306,40 @@ class LifeDexStore {
     }
 
     const collectionCard = card ?? cardFromSighting(sighting);
-    const newSightings = [sighting, ...this.state.sightings];
-    const newCards = [collectionCard, ...this.state.collectionCards];
+    this.applyCapture(sighting, collectionCard);
+    this.emit();
 
-    const newXp = this.state.profile.xp + sighting.xp;
-    const newProfile: Profile = {
-      ...this.state.profile,
-      xp: newXp,
-      level: xpToLevel(newXp),
-    };
-
-    this.sightingIndex.set(sighting.id, sighting);
-    this.setState({
-      ...this.state,
-      profile: newProfile,
-      sightings: newSightings,
-      collectionCards: newCards,
-    });
+    // Track + persist (newest first). Fire-and-forget; flush() awaits it.
+    this.userCaptures = [{ sighting, card: collectionCard }, ...this.userCaptures];
+    this.persistPromise = saveUserCaptures(this.userCaptures);
 
     return { sightingId: sighting.id, cardId: collectionCard.id };
+  }
+
+  /**
+   * Load persisted user captures and merge them on top of the seed baseline.
+   * Call once at app startup. Idempotent: captures already present are skipped.
+   */
+  async hydrate(): Promise<void> {
+    const loaded = await loadUserCaptures();
+    if (loaded.length === 0) return;
+
+    this.userCaptures = loaded;
+    let changed = false;
+    // Stored newest-first; apply oldest-first so prepending restores the order.
+    for (let i = loaded.length - 1; i >= 0; i--) {
+      const cap = loaded[i];
+      if (cap !== undefined && !this.sightingIndex.has(cap.sighting.id)) {
+        this.applyCapture(cap.sighting, cap.card);
+        changed = true;
+      }
+    }
+    if (changed) this.emit();
+  }
+
+  /** Resolves once the most recent persist write has settled (for tests/flows). */
+  flush(): Promise<void> {
+    return this.persistPromise;
   }
 
   getSightingById(id: string): Sighting | undefined {
@@ -336,9 +378,15 @@ class LifeDexStore {
     this.setState({ ...this.state, error });
   }
 
+  /**
+   * Restore the in-memory state to the seeded baseline. Clears tracked user
+   * captures but does NOT touch local storage — use clearUserCaptures() for a
+   * full factory reset. Primarily used by tests and a "simulated restart".
+   */
   reset(): void {
     this.state = createInitialState();
     this.sightingIndex = new Map(this.state.sightings.map((s) => [s.id, s]));
+    this.userCaptures = [];
     this.emit();
   }
 }

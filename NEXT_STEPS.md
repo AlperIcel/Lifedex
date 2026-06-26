@@ -16,7 +16,7 @@ This document tracks what is currently mocked versus real, and the ordered backl
 | Scoring engine | Real | `scoreSighting()` and `DefaultRarityScoringProvider` are fully deterministic domain functions. No mock path. Used in both the pipeline and the seed. |
 | Card metadata builder | Real | `buildCardMetadata()` is a pure function. Used in both the pipeline and the seed. |
 | Capture pipeline | Real (mock providers) | `sightingPipeline.createSightingFromImage()` runs the full pipeline end-to-end. With `AI_PROVIDER=mock` all providers are mock; with a real provider key the same function works without changes. |
-| App state / storage | Mock (in-memory) | `useLifeDexStore` singleton — seeded from 15-species table at startup; cleared on app reload; no Supabase writes. |
+| App state / storage | Local (AsyncStorage) | `useLifeDexStore` singleton — seeded from the species table at startup, then `hydrate()` merges persisted USER captures on top. New captures are written to AsyncStorage (`src/store/persistence.ts`) and **survive app restart**. Only user captures persist; the seed is re-loaded fresh each launch. No Supabase writes yet. |
 | Auth | Not built | No sign-in flow. `currentUserId` is hardcoded `'mock-user-001'`. Supabase Auth is wired in schema/policies but the app has no login screen yet. |
 | Map data | Mock (reactive) | `MapScreen` reads `useLifeDexStore().sightings` — reactive, includes newly captured sightings within the session. Seeded with 15 entries. No Supabase query. |
 | Map rendering | Mock fallback by default | Native `react-native-maps` renders a blank tile layer in Expo Go / emulators without a Google Maps key, so `MapScreen` shows `MockMapView` — a stylised surface that projects sightings (pins for visible, **circles-only for protected**, no exact point) using their bounding box. Native path is gated behind `env.useNativeMaps` (false in mock mode). Set `MAPS_PROVIDER` to a real provider + key + dev build to enable native. |
@@ -66,15 +66,15 @@ This document tracks what is currently mocked versus real, and the ordered backl
 
 ### 3. Supabase project + RLS deploy
 
-**Goal:** replace the in-memory `useLifeDexStore` with real Supabase persistence.
+**Goal:** upgrade local-only persistence to multi-user Supabase persistence (server-side storage + shared/public sightings).
 
-The consolidated store makes this a single swap point: `lifeDexStore.addSighting()` currently writes only to the in-memory singleton. Replacing it with a Supabase insert — and replacing the seed/read paths with Supabase queries — makes the whole app persistent without touching any screen.
+The store already persists user captures locally via AsyncStorage (`src/store/persistence.ts`), so this is the next layer, not a from-scratch change. The consolidated store keeps it a single swap point: `lifeDexStore.addSighting()` writes to the in-memory state + local storage today. Add a Supabase insert alongside (and seed/read paths from Supabase queries) to make captures server-backed and visible across users — without touching any screen.
 
 **Steps:**
 1. Follow the "Supabase setup" section in `README.md`.
 2. Add `@supabase/supabase-js` to dependencies (`npm install @supabase/supabase-js`).
 3. Create `src/lib/supabase.ts` that constructs the Supabase client from `env.supabaseUrl` and `env.supabaseAnonKey` (guard for undefined — only defined when not in mock mode).
-4. In `useLifeDexStore.ts`, replace the `addSighting` in-memory write with a Supabase insert into `sightings`; replace the seed load with a Supabase query on `public_sightings`.
+4. In `useLifeDexStore.ts`, add a Supabase insert into `sightings` alongside the existing local write in `addSighting`; replace the seed load (and `hydrate()` local read) with a Supabase query on `public_sightings`. Keep AsyncStorage as the offline cache.
 5. Replace `leaderboardEntries` seed with a query on the `leaderboard` view.
 6. `sightingPipeline.ts` needs no changes — it already calls `lifeDexStore.addSighting()`.
 7. All screens need no changes — they already read from `useLifeDexStore()`.
@@ -177,10 +177,12 @@ Requested product directions. None are built; most depend on the Supabase backen
 and/or production maps, so they slot AFTER persistence + auth + real maps. Captured
 here so they are not lost.
 
-- **Flora as the core loop.** Animals are rare in everyday surroundings; plants,
-  trees and mushrooms are the reliable everyday catch. Weight recognition and the
-  `species_rules` rarity/XP table toward flora; consider a PlantNet-style adapter
-  for the real `VisionRecognitionProvider`. (Pure data/scoring — can start early.)
+- **Animals stay the primary focus; flora fills the gap.** Animals remain the
+  highest-value, headline catch — but you don't run into a dog/cat/fox every few
+  minutes, so plants, trees and mushrooms keep the loop alive between animal finds.
+  Keep animals at the top of the `species_rules` rarity/XP scale; give flora solid
+  but lower everyday value. A PlantNet-style adapter can back flora recognition for
+  the real `VisionRecognitionProvider`. (Pure data/scoring — can start early.)
 - **Real green spaces.** With production maps, parks render from the tile layer.
   For richer overlays, ingest OpenStreetMap `landuse=forest` / `leisure=park` /
   `natural=wood` polygons into a `green_zones` table and draw them on the map.
