@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "LifeDex",
+    "slug": "lifedex",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "lifedex",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F0E"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lifedex.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "LifeDex uses the camera to photograph real living things you discover.",
+        "NSPhotoLibraryUsageDescription": "LifeDex lets you pick a photo of a living thing to identify.",
+        "NSLocationWhenInUseUsageDescription": "LifeDex records a fuzzed location for your sightings. Exact GPS is never shared publicly."
+      }
+    },
+    "android": {
+      "package": "com.lifedex.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B0F0E"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-image-picker",
+      "expo-location"
+    ],
+    "extra": {
+      "AI_PROVIDER": "mock",
+      "MAPS_PROVIDER": "mock"
+    }
+  }
+}
