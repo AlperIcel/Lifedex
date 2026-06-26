@@ -168,3 +168,35 @@ A future enhancement to overlay species identification hints in real-time via th
 - Significant battery and performance optimisation.
 
 Do not attempt until the core capture-to-card pipeline is fully production-wired.
+
+---
+
+### 11. World & content layers (post-backend)
+
+Requested product directions. None are built; most depend on the Supabase backend
+and/or production maps, so they slot AFTER persistence + auth + real maps. Captured
+here so they are not lost.
+
+- **Flora as the core loop.** Animals are rare in everyday surroundings; plants,
+  trees and mushrooms are the reliable everyday catch. Weight recognition and the
+  `species_rules` rarity/XP table toward flora; consider a PlantNet-style adapter
+  for the real `VisionRecognitionProvider`. (Pure data/scoring — can start early.)
+- **Real green spaces.** With production maps, parks render from the tile layer.
+  For richer overlays, ingest OpenStreetMap `landuse=forest` / `leisure=park` /
+  `natural=wood` polygons into a `green_zones` table and draw them on the map.
+- **Points of interest per city.** New `points_of_interest` table
+  (id, name, type, city, location, source). Seed a handful by hand for the MVP;
+  pull from OSM / Wikidata for production. Surface as map markers + discovery hints.
+- **Habitat zones.** New `habitat_zones` table (area polygon + expected species +
+  rarity/XP modifier). Drives hints ("Fox territory nearby", "Known sheep pasture")
+  and optionally a spawn/bonus mechanic. Curated content, not user-generated.
+- **Shared / community sightings.** A user's catch (e.g. a cow) becomes visible to
+  other users on the public map. This is exactly what the Supabase phase delivers:
+  `sightings` with PUBLIC, FUZZED coordinates + RLS + a public map query — no new
+  architecture. **Hard guardrails (already in the design, keep them):**
+  - Public coordinates are always fuzzed; protected/sensitive species stay hidden
+    (no public pinpointing of wildlife — poaching / disturbance risk).
+  - Public surface shows the AI recreation card, never the original photo.
+  - Domestic animals / livestock: do not tie a public pin to a private address or
+    property; fuzz and keep generic.
+  - Needs moderation + anti-spoof (fake sightings) before it goes public.
