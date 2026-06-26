@@ -24,6 +24,7 @@ import { buildCardMetadata } from '@/domain/cardMetadata';
 import type { GeoPoint, Sighting } from '@/domain/types';
 import { getProviders } from '@/providers';
 import { lifeDexStore, type CollectionCard } from '@/store/useLifeDexStore';
+import { pushSighting } from '@/lib/community';
 import { newId } from '@/utils/id';
 
 /* ------------------------------------------------------------------ */
@@ -148,6 +149,10 @@ export async function createSightingFromImage(
   };
 
   const { cardId } = lifeDexStore.addSighting(sighting, collectionCard);
+
+  // Share the public-safe version to the community feed (best-effort; no-op when
+  // Supabase is disabled). Fire-and-forget so it never blocks the capture.
+  void pushSighting(sighting);
 
   return { ok: true, blocked: false, sightingId, cardId };
 }

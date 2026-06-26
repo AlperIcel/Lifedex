@@ -18,7 +18,7 @@
  *   • privatePhotoUri never referenced — only publicImageUri is shown
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -42,6 +42,7 @@ import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import { env } from '@/config/env';
 import MockMapView, { type ClusteredPin } from '@/components/MockMapView';
+import { ensureAnonSession, fetchCommunitySightings } from '@/lib/community';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                            */
@@ -417,7 +418,33 @@ type Props = CompositeScreenProps<
 >;
 
 export default function MapScreen({ navigation }: Props) {
-  const { sightings: allSightings } = useLifeDexStore();
+  const { sightings: storeSightings } = useLifeDexStore();
+
+  // Other users' public sightings (Supabase). Empty when offline/disabled.
+  const [community, setCommunity] = useState<Sighting[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const [uid, rows] = await Promise.all([
+        ensureAnonSession(),
+        fetchCommunitySightings(),
+      ]);
+      if (!active) return;
+      // Exclude our own rows — those already appear from the local store.
+      const others = uid !== null ? rows.filter((r) => r.userId !== uid) : rows;
+      setCommunity(others);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Local captures (full records) + other users' public community sightings.
+  const allSightings = useMemo(
+    () => [...storeSightings, ...community],
+    [storeSightings, community],
+  );
 
   const [activeFilter, setActiveFilter] = useState<CategoryFilter>('all');
   const [region, setRegion] = useState<Region>(INITIAL_REGION);
@@ -641,6 +668,9 @@ export default function MapScreen({ navigation }: Props) {
             </Text>
             {hiddenCount > 0 && (
               <Text style={styles.statsHidden}> · {hiddenCount} 🔒</Text>
+            )}
+            {community.length > 0 && (
+              <Text style={styles.statsHidden}> · 🌍 {community.length}</Text>
             )}
           </View>
         </View>

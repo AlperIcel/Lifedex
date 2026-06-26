@@ -20,6 +20,7 @@ import { NavigationContainer, type Theme } from '@react-navigation/native';
 import { colors } from './src/theme/theme';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { lifeDexStore } from './src/store/useLifeDexStore';
+import { ensureAnonSession } from './src/lib/community';
 
 /**
  * Navigation theme that matches the LifeDex dark-nature palette.
@@ -41,6 +42,8 @@ export default function App(): React.JSX.Element {
   // Restore persisted captures on startup (seed shows immediately, then merges).
   useEffect(() => {
     void lifeDexStore.hydrate();
+    // Best-effort anonymous sign-in for the community layer (no-op if disabled).
+    void ensureAnonSession();
   }, []);
 
   return (

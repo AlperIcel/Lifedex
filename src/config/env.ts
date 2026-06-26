@@ -43,6 +43,11 @@ const parsed: RawEnv = RawEnvSchema.parse(readRaw());
 
 const isMockAi = parsed.AI_PROVIDER === 'mock';
 const isMockMaps = parsed.MAPS_PROVIDER === 'mock';
+const hasSupabase =
+  typeof parsed.SUPABASE_URL === 'string' &&
+  parsed.SUPABASE_URL.length > 0 &&
+  typeof parsed.SUPABASE_ANON_KEY === 'string' &&
+  parsed.SUPABASE_ANON_KEY.length > 0;
 
 /**
  * Typed, validated environment. `mockMode` is true when both AI and maps run on
@@ -61,6 +66,12 @@ export const env = {
   isMockAi,
   isMockMaps,
   mockMode: isMockAi && isMockMaps,
+  /**
+   * True when a Supabase URL + key are configured. Enables the community layer
+   * (anonymous auth + shared public sightings). When false the app stays fully
+   * local (AsyncStorage only) — no network, no behaviour change.
+   */
+  useSupabase: hasSupabase,
   /**
    * Render the native react-native-maps view. FALSE in mock mode (the default)
    * because native maps render a blank tile layer in Expo Go / emulators with no
