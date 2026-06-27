@@ -48,6 +48,20 @@ This document tracks what is currently mocked versus real, and the ordered backl
 
 **Acceptance:** the capture pipeline runs end-to-end against a real photo of an animal without mock providers.
 
+**Recognition policy (auto-detect, no manual picker):**
+- Real recognition decides the category itself — the user just takes a photo. The
+  mock-mode test-subject picker is gated on `env.isMockAi` and disappears automatically.
+- Detect **exactly ONE** element per photo with a priority order: **animal → plant/
+  tree/mushroom → landmark/POI**. If an animal is present it wins; else flora; else
+  a known landmark/sight; else `unknown` ("nothing to catch here").
+- This needs a new **landmark/POI** recognition path (ties into backlog #11 POIs +
+  habitat zones). Likely a separate detector (e.g. Google Landmark Detection /
+  Places) layered after the species detector, picking the single highest-confidence
+  subject across detectors.
+- Speed matters: identification should feel instant (Google-Lens-like). Keep GPS
+  off the critical path (already done in `CaptureScreen` — last-known + time-boxed
+  fresh fix), show the result as soon as recognition returns, enrich location after.
+
 ---
 
 ### 2. Wire real Card Generation adapter

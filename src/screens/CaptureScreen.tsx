@@ -263,19 +263,32 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       setPreviewUri(imageUri);
       setPipeline({ phase: 'running' });
 
-      // Acquire GPS best-effort before handing off to the pipeline service.
-      // The raw GeoPoint is passed in; locationPrivacy is applied inside the service.
+      // Acquire GPS FAST — never gate the result on a slow GPS lock (emulators
+      // and cold starts can take many seconds). Use the instant last-known fix;
+      // only fall back to a time-boxed fresh fix. The point is fuzzed anyway, so
+      // low accuracy is fine. If nothing arrives quickly, proceed without it.
       let location: GeoPoint | undefined;
       try {
-        const locPerm = await Location.requestForegroundPermissionsAsync();
-        if (locPerm.granted) {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          location = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        const existing = await Location.getForegroundPermissionsAsync();
+        const granted = existing.granted
+          ? true
+          : (await Location.requestForegroundPermissionsAsync()).granted;
+        if (granted) {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last !== null) {
+            location = { lat: last.coords.latitude, lng: last.coords.longitude };
+          } else {
+            const fresh = await Promise.race<Location.LocationObject | null>([
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+            ]);
+            if (fresh !== null) {
+              location = { lat: fresh.coords.latitude, lng: fresh.coords.longitude };
+            }
+          }
         }
       } catch {
-        // Location is optional — silently ignore
+        // Location is optional — proceed without it.
       }
 
       try {
