@@ -16,6 +16,7 @@ const RawEnvSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional().or(z.literal('')),
   AI_PROVIDER: ProviderSchema.default('mock'),
   MAPS_PROVIDER: ProviderSchema.default('mock'),
+  GOOGLE_CLOUD_VISION_KEY: z.string().optional().or(z.literal('')),
 });
 
 type RawEnv = z.infer<typeof RawEnvSchema>;
@@ -36,6 +37,7 @@ function readRaw(): Record<string, string | undefined> {
     SUPABASE_ANON_KEY: pick('SUPABASE_ANON_KEY'),
     AI_PROVIDER: pick('AI_PROVIDER'),
     MAPS_PROVIDER: pick('MAPS_PROVIDER'),
+    GOOGLE_CLOUD_VISION_KEY: pick('GOOGLE_CLOUD_VISION_KEY'),
   };
 }
 
@@ -63,6 +65,11 @@ export const env = {
       : undefined,
   aiProvider: parsed.AI_PROVIDER,
   mapsProvider: parsed.MAPS_PROVIDER,
+  /** Google Cloud Vision API key (undefined unless configured). */
+  googleVisionKey:
+    parsed.GOOGLE_CLOUD_VISION_KEY !== undefined && parsed.GOOGLE_CLOUD_VISION_KEY.length > 0
+      ? parsed.GOOGLE_CLOUD_VISION_KEY
+      : undefined,
   isMockAi,
   isMockMaps,
   mockMode: isMockAi && isMockMaps,

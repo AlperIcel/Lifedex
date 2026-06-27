@@ -10,3 +10,10 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 // these mocks just keep the imports from throwing at module load.
 jest.mock('react-native-url-polyfill/auto', () => ({}));
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({}) }));
+
+// expo-file-system is imported by the Google Vision provider; the real provider
+// is never constructed in tests (AI_PROVIDER=mock), this just keeps the import safe.
+jest.mock('expo-file-system', () => ({
+  readAsStringAsync: jest.fn(async () => ''),
+  EncodingType: { Base64: 'base64' },
+}));

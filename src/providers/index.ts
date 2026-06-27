@@ -17,6 +17,7 @@ import { DefaultRarityScoringProvider } from '../domain/scoring';
 import { MockCardGenProvider } from './mock/mockCardGen';
 import { MockModerationProvider } from './mock/mockModeration';
 import { MockVisionProvider } from './mock/mockVision';
+import { GoogleVisionProvider } from './google/googleVision';
 import type {
   CardImageGenerationProvider,
   ImageModerationProvider,
@@ -55,6 +56,18 @@ export function getProviders(): Providers {
   if (env.aiProvider === 'mock') {
     return {
       vision: new MockVisionProvider(),
+      moderation: new MockModerationProvider(),
+      cardGen: new MockCardGenProvider(),
+      locationPrivacy,
+      rarityScoring,
+    };
+  }
+
+  // Real recognition via Google Cloud Vision (only when a key is configured).
+  // Moderation + card generation stay on mock until their real adapters land.
+  if (env.aiProvider === 'google' && env.googleVisionKey !== undefined) {
+    return {
+      vision: new GoogleVisionProvider(env.googleVisionKey),
       moderation: new MockModerationProvider(),
       cardGen: new MockCardGenProvider(),
       locationPrivacy,

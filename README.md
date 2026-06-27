@@ -198,7 +198,8 @@ All variables are optional in mock mode. The app runs fully offline with no keys
 |---|---|---|---|
 | `SUPABASE_URL` | Only when not mocking | — | Supabase project URL (`https://<ref>.supabase.co`) |
 | `SUPABASE_ANON_KEY` | Only when not mocking | — | Supabase anon/public key |
-| `AI_PROVIDER` | No | `mock` | Vision + moderation + card-gen backend. `mock` = no keys, deterministic. Future values: `google`, `openai`, `replicate`, etc. |
+| `AI_PROVIDER` | No | `mock` | Recognition backend. `mock` = no keys, deterministic. `google` = real Google Cloud Vision (needs `GOOGLE_CLOUD_VISION_KEY`); moderation + card-gen stay mock until their adapters land. |
+| `GOOGLE_CLOUD_VISION_KEY` | Only when `AI_PROVIDER=google` | — | Google Cloud Vision API key. Free tier ~1000 units/month; billed beyond. The app falls back to mock if the key is missing. |
 | `MAPS_PROVIDER` | No | `mock` | `mock` = `MockMapView` fallback (stylised surface, no native render, no token — native maps are blank in Expo Go without a key). A real value (e.g. `google`, needs `GOOGLE_MAPS_API_KEY` + dev build) flips `env.useNativeMaps` and renders native `react-native-maps`. |
 | `GOOGLE_MAPS_API_KEY` | Only when `MAPS_PROVIDER=google` | — | Google Maps SDK key for Android + iOS |
 
