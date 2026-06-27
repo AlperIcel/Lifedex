@@ -29,7 +29,6 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -350,27 +349,6 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
     }
   }, [captureActive, runPipeline, shutterScale]);
 
-  /* ---------- Gallery pick ---------- */
-  const handleGallery = useCallback(async () => {
-    if (captureActive) return;
-
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.85,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      if (asset?.uri !== undefined) {
-        await runPipeline(asset.uri);
-      }
-    }
-  }, [captureActive, runPipeline]);
-
   /* ---------- Flip ---------- */
   const handleFlip = useCallback(() => {
     setFacing((f) => (f === 'back' ? 'front' : 'back'));
@@ -457,16 +435,11 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
 
       {/* Bottom controls */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.xl, screenH * 0.05) }]}>
-        {/* Gallery */}
-        <TouchableOpacity
-          style={styles.sideBtn}
-          onPress={() => void handleGallery()}
-          disabled={captureActive}
-          accessibilityLabel="Choose from gallery"
-        >
-          <Text style={styles.sideBtnIcon}>🖼</Text>
-          <Text style={styles.sideBtnLabel}>Gallery</Text>
-        </TouchableOpacity>
+        {/* Left placeholder to keep the shutter centred. Gallery upload is
+            intentionally removed — a catch must be a LIVE photo, not an old one. */}
+        <View style={[styles.sideBtn, { opacity: 0 }]} pointerEvents="none">
+          <Text style={styles.sideBtnIcon}>📷</Text>
+        </View>
 
         {/* Shutter */}
         <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
