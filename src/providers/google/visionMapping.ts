@@ -49,6 +49,12 @@ function hasKeyword(haystack: string[], keywords: string[]): boolean {
   return haystack.some((h) => keywords.some((k) => h.includes(k)));
 }
 
+/** Whole-word match — avoids "pet" matching "petal", "cat" matching "cattle". */
+function hasWord(haystack: string[], words: string[]): boolean {
+  const joined = ` ${haystack.join(' ')} `;
+  return words.some((w) => new RegExp(`\\b${w}\\b`).test(joined));
+}
+
 function titleCase(s: string): string {
   return s
     .split(/\s+/)
@@ -56,9 +62,52 @@ function titleCase(s: string): string {
     .join(' ');
 }
 
-/** Looks like a scientific binomial, e.g. "Vulpes vulpes". */
-function looksBinomial(s: string): boolean {
-  return /^[A-Z][a-z]+ [a-z]{2,}$/.test(s.trim());
+/**
+ * Generic / meta terms that are useless as a species name. Google's best-guess
+ * label and web entities sometimes return these (e.g. a famous ImageNet sample
+ * returns "imagenet image example"). We skip them and fall through to a better
+ * candidate. Learned from real API output — do not trust bestGuessLabels blindly.
+ */
+const GENERIC_NAME = [
+  'image', 'imagenet', 'photo', 'photograph', 'picture', 'wallpaper', 'stock',
+  'close-up', 'closeup', 'example', 'screenshot', 'illustration', 'clip art',
+];
+
+function isGeneric(s: string): boolean {
+  const l = s.toLowerCase();
+  return GENERIC_NAME.some((g) => l.includes(g));
+}
+
+/** First non-generic, non-empty candidate (title-cased); falls back to any. */
+function pickName(candidates: Array<string | undefined>): string {
+  for (const c of candidates) {
+    if (c !== undefined && c.trim().length > 0 && !isGeneric(c)) return titleCase(c);
+  }
+  for (const c of candidates) {
+    if (c !== undefined && c.trim().length > 0) return titleCase(c);
+  }
+  return 'Unknown';
+}
+
+/**
+ * Common English leading words that produce a binomial-LOOKING string but are
+ * NOT scientific names, e.g. "Common sunflower", "Red fox", "Golden retriever".
+ * Used to avoid mislabeling a common name as a scientific one.
+ */
+const LEADING_COMMON_WORDS = [
+  'common', 'golden', 'red', 'great', 'lesser', 'domestic', 'wild', 'european',
+  'american', 'northern', 'southern', 'giant', 'little', 'black', 'white', 'grey',
+  'gray', 'blue', 'green', 'spotted', 'striped', 'eurasian', 'house',
+];
+
+/**
+ * Looks like a genuine scientific binomial, e.g. "Vulpes vulpes" — a capitalised
+ * Latin genus + lowercase species, where the first word is not a common English
+ * qualifier ("Common sunflower" must NOT match).
+ */
+function looksScientific(s: string): boolean {
+  const m = s.trim().match(/^([A-Z][a-z]+) ([a-z]{2,})$/);
+  return m !== null && !LEADING_COMMON_WORDS.includes(m[1]!.toLowerCase());
 }
 
 function inferCategory(labels: string[]): Category {
@@ -85,14 +134,19 @@ export function mapVisionResponse(res: VisionAnnotateResponse): RecognitionResul
   const category = inferCategory(all);
 
   const bestGuess = res.webDetection?.bestGuessLabels?.[0]?.label;
+  const webEntityNames = (res.webDetection?.webEntities ?? [])
+    .map((e) => e.description)
+    .filter((d): d is string => d !== undefined && d.length > 0);
+  // Real-data lesson: the first non-generic web entity is the most reliable
+  // common name (e.g. "Golden Retriever", "Common Sunflower"), beating both the
+  // best-guess (often an image title like "sunflower profile") and generic
+  // labels. Exclude scientific binomials here — those become scientificName.
+  const topWebEntity = webEntityNames.find((d) => !isGeneric(d));
   const topObject = res.localizedObjectAnnotations?.[0]?.name;
   const topLabel = res.labelAnnotations?.[0]?.description;
-  const commonNameRaw = bestGuess ?? topObject ?? topLabel ?? 'Unknown';
-  const commonName = titleCase(commonNameRaw);
+  const commonName = pickName([topWebEntity, bestGuess, topObject, topLabel]);
 
-  const scientificName = res.webDetection?.webEntities
-    ?.map((e) => e.description ?? '')
-    .find((d) => looksBinomial(d));
+  const scientificName = webEntityNames.find((d) => looksScientific(d));
 
   const topScore =
     res.localizedObjectAnnotations?.[0]?.score ??
@@ -100,7 +154,9 @@ export function mapVisionResponse(res: VisionAnnotateResponse): RecognitionResul
     0.5;
   const confidence = Math.max(0, Math.min(1, topScore));
 
-  const captiveStatus: CaptiveStatus = hasKeyword(all, DOMESTIC_KW) ? 'domestic' : 'wild';
+  // Captive status only applies to animals; flora is always "wild".
+  const captiveStatus: CaptiveStatus =
+    category === 'animal' && hasWord(all, DOMESTIC_KW) ? 'domestic' : 'wild';
   const sensitivity: SensitivityLevel = 'none';
 
   return {

@@ -13,7 +13,10 @@ describe('mapVisionResponse — category inference', () => {
       ],
       webDetection: {
         bestGuessLabels: [{ label: 'red fox' }],
-        webEntities: [{ description: 'Vulpes vulpes', score: 0.8 }],
+        webEntities: [
+          { description: 'Red fox', score: 1.3 },
+          { description: 'Vulpes vulpes', score: 0.8 },
+        ],
       },
     };
     const r = mapVisionResponse(res);
@@ -87,5 +90,71 @@ describe('mapVisionResponse — details', () => {
     expect(r.category).toBe('unknown');
     expect(r.confidence).toBeGreaterThanOrEqual(0);
     expect(r.confidence).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('mapVisionResponse — real Vision output (regression fixture)', () => {
+  // Actual response from Google Cloud Vision for a Golden Retriever photo.
+  // bestGuess was the useless "imagenet image example" — the fix must fall
+  // through to the web entity "Golden Retriever" instead.
+  const realGoldenRetriever: VisionAnnotateResponse = {
+    labelAnnotations: [
+      { description: 'Dog', score: 1.0 },
+      { description: 'Carnivores', score: 0.96 },
+      { description: 'Puppy', score: 0.95 },
+      { description: 'Retriever', score: 0.89 },
+      { description: 'Snout', score: 0.86 },
+      { description: 'Golden Retriever', score: 0.81 },
+      { description: 'Gun dog', score: 0.8 },
+      { description: 'Canidae', score: 0.79 },
+    ],
+    localizedObjectAnnotations: [{ name: 'Dog', score: 0.98 }],
+    webDetection: {
+      bestGuessLabels: [{ label: 'imagenet image example' }],
+      webEntities: [
+        { description: 'Golden Retriever', score: 1.4 },
+        { description: 'Tatra Shepherd Dog', score: 0.9 },
+        { description: 'Retriever', score: 0.8 },
+        { description: 'Image', score: 0.5 },
+        { description: 'ImageNet', score: 0.4 },
+      ],
+    },
+  };
+
+  it('ignores the junk best-guess and names it from the web entity', () => {
+    const r = mapVisionResponse(realGoldenRetriever);
+    expect(r.category).toBe('animal');
+    expect(r.commonName).toBe('Golden Retriever');
+    expect(r.captiveStatus).toBe('domestic');
+    expect(r.confidence).toBeCloseTo(0.98);
+  });
+
+  // Actual response for a sunflower photo — best-guess was "sunflower profile"
+  // (an image title); the web entity "Common sunflower" is the right name.
+  const realSunflower: VisionAnnotateResponse = {
+    labelAnnotations: [
+      { description: 'Flower', score: 0.99 },
+      { description: 'Yellow', score: 0.98 },
+      { description: 'Petal', score: 0.98 },
+      { description: 'Common sunflower', score: 0.97 },
+      { description: 'Flowering plant', score: 0.86 },
+    ],
+    localizedObjectAnnotations: [{ name: 'Flower', score: 0.79 }],
+    webDetection: {
+      bestGuessLabels: [{ label: 'sunflower profile' }],
+      webEntities: [
+        { description: 'Common sunflower', score: 1.2 },
+        { description: 'Seed', score: 0.7 },
+        { description: 'Flower', score: 0.6 },
+        { description: 'Photograph', score: 0.3 },
+      ],
+    },
+  };
+
+  it('classifies a real plant and names it from the web entity', () => {
+    const r = mapVisionResponse(realSunflower);
+    expect(r.category).toBe('plant');
+    expect(r.commonName).toBe('Common Sunflower');
+    expect(r.captiveStatus).toBe('wild');
   });
 });
