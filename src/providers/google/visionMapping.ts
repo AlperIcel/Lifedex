@@ -25,12 +25,29 @@ export interface VisionWebEntity {
   description?: string;
   score?: number;
 }
+/** Google SafeSearch likelihood enum. */
+export type Likelihood =
+  | 'UNKNOWN'
+  | 'VERY_UNLIKELY'
+  | 'UNLIKELY'
+  | 'POSSIBLE'
+  | 'LIKELY'
+  | 'VERY_LIKELY';
+
 export interface VisionAnnotateResponse {
   labelAnnotations?: VisionLabel[];
   localizedObjectAnnotations?: Array<{ name: string; score: number }>;
   webDetection?: {
     webEntities?: VisionWebEntity[];
     bestGuessLabels?: Array<{ label: string }>;
+  };
+  faceAnnotations?: Array<{ detectionConfidence?: number }>;
+  safeSearchAnnotation?: {
+    adult?: Likelihood;
+    violence?: Likelihood;
+    racy?: Likelihood;
+    spoof?: Likelihood;
+    medical?: Likelihood;
   };
 }
 

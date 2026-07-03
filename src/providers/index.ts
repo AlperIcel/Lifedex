@@ -18,6 +18,7 @@ import { MockCardGenProvider } from './mock/mockCardGen';
 import { MockModerationProvider } from './mock/mockModeration';
 import { MockVisionProvider } from './mock/mockVision';
 import { GoogleVisionProvider } from './google/googleVision';
+import { GoogleModerationProvider } from './google/googleModeration';
 import type {
   CardImageGenerationProvider,
   ImageModerationProvider,
@@ -63,12 +64,12 @@ export function getProviders(): Providers {
     };
   }
 
-  // Real recognition via Google Cloud Vision (only when a key is configured).
-  // Moderation + card generation stay on mock until their real adapters land.
+  // Real recognition + moderation via Google Cloud Vision (one shared API call
+  // per photo). Only when a key is configured. Card generation stays mock.
   if (env.aiProvider === 'google' && env.googleVisionKey !== undefined) {
     return {
       vision: new GoogleVisionProvider(env.googleVisionKey),
-      moderation: new MockModerationProvider(),
+      moderation: new GoogleModerationProvider(env.googleVisionKey),
       cardGen: new MockCardGenProvider(),
       locationPrivacy,
       rarityScoring,
