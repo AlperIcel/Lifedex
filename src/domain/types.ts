@@ -72,6 +72,18 @@ export type PublicLocation = z.infer<typeof PublicLocationSchema>;
 /* Recognition / Moderation                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Normalized (0..1) rectangle of the detected subject within the photo, used to
+ * crop the card image to the subject. x/y = top-left, w/h = size.
+ */
+export const NormalizedRectSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  w: z.number().min(0).max(1),
+  h: z.number().min(0).max(1),
+});
+export type NormalizedRect = z.infer<typeof NormalizedRectSchema>;
+
 export const RecognitionResultSchema = z.object({
   category: CategorySchema,
   commonName: z.string(),
@@ -79,6 +91,8 @@ export const RecognitionResultSchema = z.object({
   confidence: z.number().min(0).max(1),
   captiveStatus: CaptiveStatusSchema,
   sensitivity: SensitivityLevelSchema,
+  /** Bounding box of the subject (from object detection), if available. */
+  subjectBox: NormalizedRectSchema.optional(),
 });
 export type RecognitionResult = z.infer<typeof RecognitionResultSchema>;
 

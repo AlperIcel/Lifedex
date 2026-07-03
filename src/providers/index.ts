@@ -19,6 +19,7 @@ import { MockModerationProvider } from './mock/mockModeration';
 import { MockVisionProvider } from './mock/mockVision';
 import { GoogleVisionProvider } from './google/googleVision';
 import { GoogleModerationProvider } from './google/googleModeration';
+import { CropCardGenProvider } from './google/cropCardGen';
 import type {
   CardImageGenerationProvider,
   ImageModerationProvider,
@@ -70,7 +71,9 @@ export function getProviders(): Providers {
     return {
       vision: new GoogleVisionProvider(env.googleVisionKey),
       moderation: new GoogleModerationProvider(env.googleVisionKey),
-      cardGen: new MockCardGenProvider(),
+      // Free subject-crop card image (no key). Upload to public storage happens
+      // in the community layer; premium AI restyle is a later slice.
+      cardGen: new CropCardGenProvider(),
       locationPrivacy,
       rarityScoring,
     };

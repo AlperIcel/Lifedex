@@ -17,3 +17,10 @@ jest.mock('expo-file-system', () => ({
   readAsStringAsync: jest.fn(async () => ''),
   EncodingType: { Base64: 'base64' },
 }));
+
+// expo-image-manipulator is imported by the crop card-gen provider (google mode);
+// not exercised in tests (AI_PROVIDER=mock), this keeps the import safe.
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: jest.fn(async () => ({ uri: 'file:///card.jpg', width: 1024, height: 1024 })),
+  SaveFormat: { JPEG: 'jpeg' },
+}));

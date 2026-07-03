@@ -146,8 +146,15 @@ export async function createSightingFromImage(
   // 5. Card metadata.
   const card = buildCardMetadata(recognition, score);
 
-  // 6. Generate the PUBLIC card image (mock: deterministic URI).
-  const { publicImageUri } = await providers.cardGen.generateCard(card, recognition);
+  // 6. Generate the card image from the private photo (crop in google mode,
+  // placeholder in mock). On failure, fall back to the emoji placeholder URI so
+  // a capture never fails just because image processing did.
+  let publicImageUri: string;
+  try {
+    ({ publicImageUri } = await providers.cardGen.generateCard(card, recognition, imageUri));
+  } catch {
+    publicImageUri = `mock-card://${recognition.category}`;
+  }
 
   // 7. Persist exactly ONE Sighting + ONE CollectionCard.
   const sightingId = newId('sighting');

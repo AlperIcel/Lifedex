@@ -37,6 +37,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation/types';
 import type { CardMetadata, Sighting } from '@/domain/types';
 import { env } from '@/config/env';
+import { MockCardImage } from '@/components/MockCardImage';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import {
   colors,
@@ -161,20 +162,21 @@ interface CardFaceProps {
 }
 
 /** The visible face of the collectible card. */
-function CardFace({ card, imageUri: _imageUri, flipped }: CardFaceProps) {
+function CardFace({ card, imageUri, flipped }: CardFaceProps) {
   const rarityColor = rarityColors[card.rarity];
   const categoryIcon = CATEGORY_ICONS[card.category] ?? '❓';
 
   return (
     <View style={[styles.cardFace, { borderColor: rarityColor }]}>
-      {/* AI-recreation image area */}
+      {/* Card art: real cropped photo (file://) in google mode, styled placeholder
+          for mock-card:// URIs. MockCardImage picks the right renderer. */}
       <View style={[styles.cardImageArea, { backgroundColor: colors.surfaceElevated }]}>
-        {/* In real mode this would be an <Image source={{ uri: imageUri }} /> */}
-        {/* Mock URIs are not network-loadable, so we render a styled placeholder */}
-        <Text style={styles.cardImagePlaceholderIcon}>{categoryIcon}</Text>
-        <Text style={styles.cardImagePlaceholderLabel} numberOfLines={1}>
-          {card.name}
-        </Text>
+        <MockCardImage
+          uri={imageUri}
+          rarity={card.rarity}
+          category={card.category}
+          name={card.name}
+        />
         {/* Subtle rarity glow strip at bottom of image */}
         <View style={[styles.cardImageGlow, { backgroundColor: rarityColor + '40' }]} />
       </View>

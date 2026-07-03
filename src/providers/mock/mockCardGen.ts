@@ -29,6 +29,7 @@ export class MockCardGenProvider implements CardImageGenerationProvider {
   async generateCard(
     meta: CardMetadata,
     _recognition: RecognitionResult,
+    _imageUri: string,
   ): Promise<{ publicImageUri: string }> {
     const slug = slugify(meta.name);
     const publicImageUri = `mock-card://${meta.category}/${slug}/${meta.rarity}/${meta.xp}`;

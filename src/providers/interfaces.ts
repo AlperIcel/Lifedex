@@ -36,9 +36,16 @@ export interface ImageModerationProvider {
  * Receives the card metadata plus the recognition result for context.
  */
 export interface CardImageGenerationProvider {
+  /**
+   * @param imageUri  The private source photo. Used to derive the card art (e.g.
+   *   a subject crop). NEVER returned or published — only the processed result is.
+   * @returns publicImageUri which may be a local `file://` URI (upload to public
+   *   storage is the community layer's job) or a `mock-card://` placeholder.
+   */
   generateCard(
     meta: CardMetadata,
     recognition: RecognitionResult,
+    imageUri: string,
   ): Promise<{ publicImageUri: string }>;
 }
 

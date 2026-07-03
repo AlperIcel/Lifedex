@@ -102,13 +102,13 @@ describe('ResultScreen pipeline (provider layer)', () => {
     const score = rarityScoring.score(scoreInput);
     const card = buildCardMetadata(recognition, score);
 
-    const { publicImageUri } = await cardGen.generateCard(card, recognition);
+    const { publicImageUri } = await cardGen.generateCard(card, recognition, 'mock://photo.jpg');
     expect(publicImageUri).toMatch(/^mock-card:\/\//);
     expect(publicImageUri).toContain(card.category);
     expect(publicImageUri).toContain(card.rarity);
 
     // Deterministic: same inputs → same URI
-    const { publicImageUri: second } = await cardGen.generateCard(card, recognition);
+    const { publicImageUri: second } = await cardGen.generateCard(card, recognition, 'mock://photo.jpg');
     expect(second).toBe(publicImageUri);
   });
 
@@ -169,7 +169,7 @@ describe('ResultScreen pipeline (provider layer)', () => {
         streak: 0,
       });
       const card = buildCardMetadata(recognition, score);
-      const { publicImageUri } = await cardGen.generateCard(card, recognition);
+      const { publicImageUri } = await cardGen.generateCard(card, recognition, 'mock://photo.jpg');
       expect(publicImageUri).toBeTruthy();
     }
   });

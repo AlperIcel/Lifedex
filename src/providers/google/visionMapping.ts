@@ -12,9 +12,23 @@
 import type {
   CaptiveStatus,
   Category,
+  NormalizedRect,
   RecognitionResult,
   SensitivityLevel,
 } from '@/domain/types';
+
+/** Convert Vision normalized vertices (x/y omitted when 0) to a subject rect. */
+export function verticesToRect(vertices: VisionVertex[] | undefined): NormalizedRect | undefined {
+  if (vertices === undefined || vertices.length === 0) return undefined;
+  const xs = vertices.map((v) => v.x ?? 0);
+  const ys = vertices.map((v) => v.y ?? 0);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const w = Math.max(...xs) - minX;
+  const h = Math.max(...ys) - minY;
+  if (w <= 0 || h <= 0) return undefined;
+  return { x: minX, y: minY, w, h };
+}
 
 /* Minimal shape of the bits of the Vision response we use. */
 export interface VisionLabel {
@@ -34,9 +48,18 @@ export type Likelihood =
   | 'LIKELY'
   | 'VERY_LIKELY';
 
+export interface VisionVertex {
+  x?: number;
+  y?: number;
+}
+
 export interface VisionAnnotateResponse {
   labelAnnotations?: VisionLabel[];
-  localizedObjectAnnotations?: Array<{ name: string; score: number }>;
+  localizedObjectAnnotations?: Array<{
+    name: string;
+    score: number;
+    boundingPoly?: { normalizedVertices?: VisionVertex[] };
+  }>;
   webDetection?: {
     webEntities?: VisionWebEntity[];
     bestGuessLabels?: Array<{ label: string }>;
@@ -176,6 +199,10 @@ export function mapVisionResponse(res: VisionAnnotateResponse): RecognitionResul
     category === 'animal' && hasWord(all, DOMESTIC_KW) ? 'domestic' : 'wild';
   const sensitivity: SensitivityLevel = 'none';
 
+  const subjectBox = verticesToRect(
+    res.localizedObjectAnnotations?.[0]?.boundingPoly?.normalizedVertices,
+  );
+
   return {
     category,
     commonName,
@@ -183,5 +210,6 @@ export function mapVisionResponse(res: VisionAnnotateResponse): RecognitionResul
     confidence,
     captiveStatus,
     sensitivity,
+    subjectBox,
   };
 }
