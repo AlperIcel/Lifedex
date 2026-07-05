@@ -18,10 +18,13 @@
  */
 
 import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 
+import { haptics } from '@/utils/haptics';
+import { SettingsScreen } from '@/screens/SettingsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 // MapScreen is a default export
 import MapScreenDefault from '@/screens/MapScreen';
@@ -30,7 +33,7 @@ import { CollectionScreen } from '@/screens/CollectionScreen';
 // CardDetailScreen is a named export
 import { CardDetailScreen } from '@/screens/CardDetailScreen';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
-import { colors, radius, spacing, typography } from '@/theme/theme';
+import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
 
 const MapScreen = MapScreenDefault;
 
@@ -53,17 +56,18 @@ const ResultScreen = React.lazy(
 );
 
 /* ------------------------------------------------------------------ */
-/* Icon sets — text emoji, no image assets required                    */
+/* Icon sets — Ionicons (no emoji in chrome)                            */
 /* ------------------------------------------------------------------ */
 
 type TabIconName = 'Home' | 'Map' | 'Capture' | 'Collection' | 'Leaderboard';
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
-const TAB_ICONS: Record<TabIconName, { active: string; inactive: string }> = {
-  Home: { active: '🏠', inactive: '🏠' },
-  Map: { active: '🗺', inactive: '🗺' },
-  Capture: { active: '📷', inactive: '📷' },
-  Collection: { active: '📚', inactive: '📚' },
-  Leaderboard: { active: '🏆', inactive: '🏆' },
+const TAB_ICONS: Record<TabIconName, { active: IoniconName; inactive: IoniconName }> = {
+  Home: { active: 'home', inactive: 'home-outline' },
+  Map: { active: 'map', inactive: 'map-outline' },
+  Capture: { active: 'camera', inactive: 'camera' },
+  Collection: { active: 'albums', inactive: 'albums-outline' },
+  Leaderboard: { active: 'podium', inactive: 'podium-outline' },
 };
 
 const TAB_LABELS: Record<TabIconName, string> = {
@@ -85,20 +89,24 @@ interface TabBarIconProps {
 }
 
 function TabBarIcon({ name, focused, isCenterCapture = false }: TabBarIconProps) {
-  const { active, inactive } = TAB_ICONS[name];
-  const icon = focused ? active : inactive;
+  const icon = focused ? TAB_ICONS[name].active : TAB_ICONS[name].inactive;
   const label = TAB_LABELS[name];
+
+  // Fade the label in only when focused (Apple-restrained tab bar).
+  const labelOpacity = React.useRef(new Animated.Value(focused ? 1 : 0)).current;
+  React.useEffect(() => {
+    Animated.timing(labelOpacity, {
+      toValue: focused ? 1 : 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [focused, labelOpacity]);
 
   if (isCenterCapture) {
     return (
       <View style={styles.captureTabOuter}>
-        <View
-          style={[
-            styles.captureTabInner,
-            focused && styles.captureTabInnerFocused,
-          ]}
-        >
-          <Text style={styles.captureTabIcon}>{icon}</Text>
+        <View style={styles.captureTabInner}>
+          <Ionicons name="camera" size={26} color={colors.onAccent} />
         </View>
       </View>
     );
@@ -106,14 +114,17 @@ function TabBarIcon({ name, focused, isCenterCapture = false }: TabBarIconProps)
 
   return (
     <View style={styles.tabIconWrap}>
-      <Text style={[styles.tabIcon, focused && styles.tabIconFocused]}>{icon}</Text>
-      <Text
-        style={[styles.tabLabel, focused && styles.tabLabelFocused]}
+      <Ionicons
+        name={icon}
+        size={24}
+        color={focused ? colors.accent : colors.textTertiary}
+      />
+      <Animated.Text
+        style={[styles.tabLabel, { opacity: labelOpacity }]}
         numberOfLines={1}
       >
         {label}
-      </Text>
-      {focused && <View style={styles.tabActiveBar} />}
+      </Animated.Text>
     </View>
   );
 }
@@ -174,8 +185,12 @@ function TabNavigator() {
           tabBarButton: (props) => (
             <Pressable
               {...props}
+              onPress={(e) => {
+                haptics.press();
+                props.onPress?.(e);
+              }}
               style={[props.style, styles.captureTabButton]}
-              android_ripple={{ color: colors.teal + '33', radius: 36 }}
+              android_ripple={{ color: colors.accent + '33', radius: 36 }}
             />
           ),
         }}
@@ -269,6 +284,17 @@ export function RootNavigator({
           gestureDirection: 'vertical',
         }}
       />
+
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -280,8 +306,7 @@ export function RootNavigator({
 function LoadingScreen() {
   return (
     <View style={styles.loadingRoot}>
-      <Text style={styles.loadingIcon}>🌿</Text>
-      <Text style={styles.loadingText}>Loading…</Text>
+      <ActivityIndicator color={colors.accent} />
     </View>
   );
 }
@@ -308,8 +333,9 @@ const styles = StyleSheet.create({
   tabBarBackground: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    opacity: 0.98,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
   },
 
   /* Regular tab item */
@@ -328,13 +354,9 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   tabLabel: {
-    ...typography.label,
-    color: colors.textMuted,
+    ...typography.caption,
+    color: colors.accent,
     fontSize: 10,
-  },
-  tabLabelFocused: {
-    color: colors.teal,
-    fontWeight: '700',
   },
   tabActiveBar: {
     position: 'absolute',
@@ -362,29 +384,10 @@ const styles = StyleSheet.create({
     width: CAPTURE_SIZE,
     height: CAPTURE_SIZE,
     borderRadius: CAPTURE_SIZE / 2,
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 2,
-    borderColor: colors.border,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.45,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  captureTabInnerFocused: {
-    backgroundColor: colors.teal,
-    borderColor: colors.teal,
-  },
-  captureTabIcon: {
-    fontSize: 26,
+    ...elevation.level2,
   },
 
   /* Loading fallback */

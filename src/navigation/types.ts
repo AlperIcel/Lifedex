@@ -19,6 +19,7 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<RootTabParamList>;
   CardDetail: { cardId: string };
   Result: { sightingId: string };
+  Settings: undefined;
 };
 
 declare global {
