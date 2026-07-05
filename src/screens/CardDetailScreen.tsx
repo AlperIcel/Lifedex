@@ -1,27 +1,26 @@
 /**
- * CardDetailScreen — full-bleed collectible card detail view.
+ * CardDetailScreen — full-bleed collectible card detail view (modal).
  *
  * Route: RootStackParamList['CardDetail'] — receives { cardId: string }.
  *
  * Layout (top to bottom):
- *   1. Hero card image (AI recreation, NOT original photo) with rarity glow.
- *   2. Header bar — back button + share placeholder.
- *   3. Card identity — name, scientific name, category chip, rarity badge.
- *   4. XP ring + stat grid (confidence, category, captive status).
- *   5. First-discovery banner (conditional).
- *   6. Discovery metadata — date, fuzzed location snippet, precision note.
- *   7. Safety notes panel (conditional — only for sensitive/protected/captive).
- *   8. Location privacy notice.
+ *   1. Hero — full-bleed card image behind the status bar, bottom scrim,
+ *      species name + scientific name over the scrim, grabber handle,
+ *      close affordance (chevron-down), rarity badge, share placeholder.
+ *   2. Stats — Apple Settings-style hairline-separated 2-column row list.
+ *   3. First-discovery banner (conditional).
+ *   4. About — description.
+ *   5. Discovery metadata — date, fuzzed location snippet, precision note.
+ *   6. Safety notes panel (conditional — only for sensitive/protected/captive).
+ *   7. Location privacy notice.
  *
  * HARD RULES enforced here:
  * - publicImageUri (AI recreation) is shown; privatePhotoUri is NEVER accessed.
  * - Hidden locations show "Location hidden for species protection" — no coords.
  * - Captive/zoo sightings are tagged explicitly.
  */
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import {
-  Animated,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,17 +29,22 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Button } from '@/components/Button';
+import { MockCardImage } from '@/components/MockCardImage';
 import { RarityBadge } from '@/components/RarityBadge';
-import { XPRing } from '@/components/XPRing';
 import type { Rarity, Sighting } from '@/domain/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import {
   colors,
   radius,
   rarityColors,
+  scrimGradient,
   spacing,
   typography,
 } from '@/theme/theme';
+import { haptics } from '@/utils/haptics';
 import type { RootStackParamList } from '@/navigation/types';
 
 /* ------------------------------------------------------------------ */
@@ -52,14 +56,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'CardDetail'>;
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
-
-const CATEGORY_ICON: Record<string, string> = {
-  animal: '🐾',
-  plant: '🌿',
-  tree: '🌲',
-  mushroom: '🍄',
-  unknown: '❓',
-};
 
 const CAPTIVE_LABEL: Record<string, string> = {
   wild: 'Wild',
@@ -99,130 +95,64 @@ function precisionLabel(meters: number, hidden: boolean): string {
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Gradient-bordered card image frame with rarity glow. */
-function CardFrame({
-  rarity,
-  imageUri,
-}: {
-  rarity: Rarity;
-  imageUri: string;
-}) {
-  const glowColor = rarityColors[rarity];
-
-  // Placeholder image: colored panel with card URI shown (mock mode has no real image)
-  const isMock = imageUri.startsWith('mock-card://');
-
-  return (
-    <View style={[styles.cardFrame, { shadowColor: glowColor }]}>
-      {/* Outer glow border */}
-      <View
-        style={[
-          styles.cardBorder,
-          { borderColor: `${glowColor}60` },
-        ]}
-      >
-        {/* Inner surface */}
-        <View style={styles.cardInner}>
-          {isMock ? (
-            <MockCardPlaceholder rarity={rarity} imageUri={imageUri} />
-          ) : (
-            // Real mode: swap this for <Image source={{ uri: imageUri }} ... />
-            <View style={[styles.imagePlaceholder, { backgroundColor: `${glowColor}18` }]} />
-          )}
-          {/* Rarity sheen overlay */}
-          <View
-            style={[
-              styles.raritySheen,
-              { backgroundColor: `${glowColor}0A` },
-            ]}
-          />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** Visual placeholder used in mock mode — shows the species slug decoded from URI. */
-function MockCardPlaceholder({
-  rarity,
-  imageUri,
-}: {
-  rarity: Rarity;
-  imageUri: string;
-}) {
-  const glowColor = rarityColors[rarity];
-  // Parse mock-card://<category>/<slug>/<rarity>/<xp>
-  const parts = imageUri.replace('mock-card://', '').split('/');
-  const category = parts[0] ?? 'unknown';
-  const slug = (parts[1] ?? 'specimen').replace(/-/g, ' ');
-  const icon = CATEGORY_ICON[category] ?? '❓';
-
-  return (
-    <View style={[styles.mockPlaceholder, { backgroundColor: `${glowColor}12` }]}>
-      {/* Decorative corner marks — collectible card aesthetic */}
-      <Text style={[styles.cornerMark, styles.cornerTL, { color: `${glowColor}50` }]}>◆</Text>
-      <Text style={[styles.cornerMark, styles.cornerTR, { color: `${glowColor}50` }]}>◆</Text>
-      <Text style={[styles.cornerMark, styles.cornerBL, { color: `${glowColor}50` }]}>◆</Text>
-      <Text style={[styles.cornerMark, styles.cornerBR, { color: `${glowColor}50` }]}>◆</Text>
-
-      {/* Hexagonal scan-lines texture (drawn in-place) */}
-      <View style={styles.scanlineLayer} pointerEvents="none">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <View
-            key={i}
-            style={[
-              styles.scanline,
-              { top: i * 30, borderTopColor: `${glowColor}0D` },
-            ]}
-          />
-        ))}
-      </View>
-
-      {/* Centre content */}
-      <View style={styles.mockCenter}>
-        <Text style={[styles.mockIcon, { textShadowColor: glowColor, textShadowRadius: 18 }]}>
-          {icon}
-        </Text>
-        <Text style={[styles.mockSlug, { color: glowColor }]}>
-          {slug.replace(/\b\w/g, (c) => c.toUpperCase())}
-        </Text>
-        <Text style={styles.mockNote}>AI Recreation</Text>
-      </View>
-    </View>
-  );
-}
-
-/** Single stat cell used in the grid. */
-function StatCell({
+/** A single label/value row in the stats list, Apple Settings-style. */
+function StatRow({
   label,
   value,
-  accent,
+  valueColor,
+  last,
 }: {
   label: string;
-  value: string | number;
-  accent?: string;
+  value: React.ReactNode;
+  valueColor?: string;
+  last?: boolean;
 }) {
   return (
-    <View style={styles.statCell}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, accent ? { color: accent } : null]}>
-        {String(value)}
-      </Text>
+    <View style={[styles.statRow, !last && styles.statRowDivider]}>
+      <Text style={styles.statRowLabel}>{label}</Text>
+      <View style={styles.statRowValueWrap}>
+        {typeof value === 'string' || typeof value === 'number' ? (
+          <Text
+            style={[styles.statRowValue, valueColor ? { color: valueColor } : null]}
+            numberOfLines={1}
+          >
+            {String(value)}
+          </Text>
+        ) : (
+          value
+        )}
+      </View>
     </View>
   );
 }
 
-/** Horizontal divider. */
-function Divider() {
-  return <View style={styles.divider} />;
-}
-
-/** Collapsible safety note item. */
-function SafetyNote({ note }: { note: string }) {
+/** Tinted info panel with an Ionicon, used for safety notes + privacy notice. */
+function TintPanel({
+  icon,
+  iconColor,
+  tint,
+  title,
+  titleColor,
+  children,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  tint: string;
+  title?: string;
+  titleColor?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.safetyRow}>
-      <Text style={styles.safetyBullet}>⚠</Text>
-      <Text style={styles.safetyText}>{note}</Text>
+    <View style={[styles.tintPanel, { backgroundColor: tint }]}>
+      <Ionicons name={icon} size={18} color={iconColor} style={styles.tintPanelIcon} />
+      <View style={styles.tintPanelBody}>
+        {title !== undefined && (
+          <Text style={[styles.tintPanelTitle, titleColor ? { color: titleColor } : null]}>
+            {title}
+          </Text>
+        )}
+        {children}
+      </View>
     </View>
   );
 }
@@ -245,15 +175,8 @@ export function CardDetailScreen({ route, navigation }: Props) {
   // isFirstDiscovery is not persisted on Sighting (see store notes); default false.
   const isFirstDiscovery = false;
 
-  // Scroll-driven header opacity
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 120],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-
   const handleBack = useCallback(() => {
+    haptics.tap();
     if (navigation.canGoBack()) {
       navigation.goBack();
     }
@@ -263,67 +186,84 @@ export function CardDetailScreen({ route, navigation }: Props) {
   if (sighting === null) {
     return (
       <View style={[styles.root, styles.centred]}>
-        <Text style={styles.errorIcon}>✕</Text>
+        <Ionicons name="close-circle-outline" size={40} color={colors.danger} style={styles.errorIcon} />
         <Text style={styles.errorTitle}>Card not found</Text>
         <Text style={styles.errorBody}>No data found for this card.</Text>
-        <Pressable style={styles.backBtn} onPress={handleBack}>
-          <Text style={styles.backBtnText}>Go back</Text>
-        </Pressable>
+        <Button title="Go back" variant="primary" onPress={handleBack} haptic={false} />
       </View>
     );
   }
 
   const { card, publicLocation, createdAt, confidence, captiveStatus, category } = sighting;
-  const rarity = sighting.rarity;
+  const rarity: Rarity = sighting.rarity;
   const rarityColor = rarityColors[rarity];
   const isHidden = publicLocation.hidden;
   const isCaptive = captiveStatus === 'zoo_captive' || captiveStatus === 'domestic';
 
   return (
     <View style={styles.root}>
-      {/* ── Sticky header (appears on scroll) ── */}
-      <Animated.View
-        style={[
-          styles.stickyHeader,
-          { paddingTop: insets.top, opacity: headerOpacity },
-        ]}
-        pointerEvents="box-none"
-      >
-        <View style={styles.stickyHeaderInner}>
-          <Text style={styles.stickyTitle} numberOfLines={1}>
-            {card.name}
-          </Text>
-        </View>
-      </Animated.View>
-
-      <Animated.ScrollView
+      <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true },
-        )}
       >
-        {/* ── Back button (floating above card image) ── */}
-        <View style={[styles.floatingBar, { top: insets.top + spacing.sm }]}>
-          <Pressable
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-            onPress={handleBack}
-            hitSlop={12}
-            accessibilityLabel="Go back"
-            accessibilityRole="button"
-          >
-            <Text style={styles.iconBtnText}>‹</Text>
-          </Pressable>
+        {/* ── Hero — full-bleed image behind the status bar ── */}
+        <View style={styles.hero}>
+          <MockCardImage
+            uri={sighting.publicImageUri}
+            rarity={rarity}
+            category={category}
+            name={card.name}
+          />
 
-          {/* Rarity tag top-right */}
-          <RarityBadge rarity={rarity} />
+          {/* Scrim for legible text over imagery */}
+          <LinearGradient
+            colors={[...scrimGradient]}
+            style={styles.heroScrim}
+            pointerEvents="none"
+          />
+
+          {/* Grabber handle */}
+          <View style={[styles.grabberWrap, { top: insets.top + spacing.xs }]} pointerEvents="none">
+            <View style={styles.grabber} />
+          </View>
+
+          {/* Close affordance + rarity + share */}
+          <View style={[styles.heroTopBar, { top: insets.top + spacing.md }]}>
+            <Pressable
+              style={({ pressed }) => [styles.glassCircle, pressed && styles.glassCirclePressed]}
+              onPress={handleBack}
+              hitSlop={12}
+              accessibilityLabel="Close"
+              accessibilityRole="button"
+            >
+              <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
+            </Pressable>
+
+            <View style={styles.heroTopBarRight}>
+              <RarityBadge rarity={rarity} />
+              <Pressable
+                style={({ pressed }) => [styles.glassCircle, pressed && styles.glassCirclePressed]}
+                disabled
+                accessibilityLabel="Share (coming soon)"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: true }}
+              >
+                <Ionicons name="share-outline" size={19} color={colors.textDisabled} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Identity over the scrim */}
+          <View style={styles.heroTextBlock}>
+            <Text style={styles.speciesName} numberOfLines={2}>
+              {card.name}
+            </Text>
+            {sighting.scientificName !== undefined && (
+              <Text style={styles.scientificName}>{sighting.scientificName}</Text>
+            )}
+          </View>
         </View>
-
-        {/* ── Hero card image ── */}
-        <CardFrame rarity={rarity} imageUri={sighting.publicImageUri} />
 
         {/* ── Content body ── */}
         <View style={styles.body}>
@@ -331,7 +271,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
           {/* First-discovery banner */}
           {isFirstDiscovery && (
             <View style={[styles.firstDiscoveryBanner, { borderColor: `${rarityColor}60` }]}>
-              <Text style={styles.firstDiscoveryIcon}>★</Text>
+              <Ionicons name="star" size={20} color={rarityColor} style={styles.firstDiscoveryIcon} />
               <View style={styles.firstDiscoveryText}>
                 <Text style={[styles.firstDiscoveryTitle, { color: rarityColor }]}>
                   First Discovery!
@@ -343,58 +283,51 @@ export function CardDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Name + identity */}
-          <View style={styles.identityBlock}>
-            <View style={styles.categoryChip}>
-              <Text style={styles.categoryChipText}>
-                {CATEGORY_ICON[category]} {category.charAt(0).toUpperCase() + category.slice(1)}
+          {isCaptive && (
+            <View style={styles.captiveTag}>
+              <Text style={styles.captiveTagText}>
+                {CAPTIVE_LABEL[captiveStatus] ?? captiveStatus}
               </Text>
             </View>
+          )}
 
-            <Text style={styles.speciesName}>{card.name}</Text>
-
-            {sighting.scientificName !== undefined && (
-              <Text style={styles.scientificName}>{sighting.scientificName}</Text>
-            )}
-
-            {isCaptive && (
-              <View style={styles.captiveTag}>
-                <Text style={styles.captiveTagText}>
-                  {captiveStatus === 'zoo_captive' ? '🏛 Zoo / Captive' : '🏠 Domestic'}
-                </Text>
-              </View>
-            )}
+          {/* Stats list — Apple Settings pattern */}
+          <View style={styles.statsCard}>
+            <StatRow
+              label="Rarity"
+              value={<RarityBadge rarity={rarity} size="sm" />}
+            />
+            <StatRow
+              label="Category"
+              value={category.charAt(0).toUpperCase() + category.slice(1)}
+            />
+            <StatRow
+              label="Confidence"
+              value={`${Math.round(confidence * 100)}%`}
+            />
+            <StatRow
+              label="XP"
+              value={card.xp}
+            />
+            <StatRow
+              label="First discovery"
+              value={isFirstDiscovery ? 'Yes' : 'No'}
+            />
+            <StatRow
+              label="Date spotted"
+              value={formatDate(createdAt)}
+            />
+            <StatRow
+              label="Location"
+              value={
+                isHidden
+                  ? 'Hidden for species protection'
+                  : `${formatLocation(sighting)} · ${precisionLabel(publicLocation.precisionMeters, isHidden)}`
+              }
+              valueColor={isHidden ? colors.warning : undefined}
+              last
+            />
           </View>
-
-          <Divider />
-
-          {/* XP ring + stat grid */}
-          <View style={styles.scoreRow}>
-            <XPRing xp={card.xp} rarity={rarity} size={96} progress={1} />
-
-            <View style={styles.statGrid}>
-              <StatCell
-                label="Rarity"
-                value={rarity.charAt(0).toUpperCase() + rarity.slice(1)}
-                accent={rarityColor}
-              />
-              <StatCell
-                label="Confidence"
-                value={`${Math.round(confidence * 100)}%`}
-              />
-              <StatCell
-                label="Status"
-                value={CAPTIVE_LABEL[captiveStatus] ?? captiveStatus}
-                accent={isCaptive ? colors.warning : undefined}
-              />
-              <StatCell
-                label="Category"
-                value={category.charAt(0).toUpperCase() + category.slice(1)}
-              />
-            </View>
-          </View>
-
-          <Divider />
 
           {/* Description */}
           <View style={styles.section}>
@@ -402,67 +335,36 @@ export function CardDetailScreen({ route, navigation }: Props) {
             <Text style={styles.descriptionText}>{card.description}</Text>
           </View>
 
-          <Divider />
-
-          {/* Discovery metadata */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Discovery</Text>
-
-            <View style={styles.metaRow}>
-              <Text style={styles.metaIcon}>📅</Text>
-              <View style={styles.metaContent}>
-                <Text style={styles.metaLabel}>Date spotted</Text>
-                <Text style={styles.metaValue}>{formatDate(createdAt)}</Text>
-              </View>
-            </View>
-
-            <View style={styles.metaRow}>
-              <Text style={styles.metaIcon}>📍</Text>
-              <View style={styles.metaContent}>
-                <Text style={styles.metaLabel}>Location</Text>
-                {isHidden ? (
-                  <Text style={[styles.metaValue, styles.hiddenLocation]}>
-                    Hidden for species protection
-                  </Text>
-                ) : (
-                  <>
-                    <Text style={styles.metaValue}>{formatLocation(sighting)}</Text>
-                    <Text style={styles.metaPrecision}>
-                      {precisionLabel(publicLocation.precisionMeters, isHidden)}
-                    </Text>
-                  </>
-                )}
-              </View>
-            </View>
-          </View>
-
           {/* Safety notes */}
           {card.safetyNotes !== undefined && card.safetyNotes.length > 0 && (
-            <>
-              <Divider />
-              <View style={[styles.section, styles.safetySection]}>
-                <Text style={[styles.sectionTitle, { color: colors.warning }]}>
-                  Safety & Ethics
+            <TintPanel
+              icon="shield-checkmark-outline"
+              iconColor={colors.warning}
+              tint={`${colors.warning}1A`}
+              title="Safety & Ethics"
+              titleColor={colors.warning}
+            >
+              {card.safetyNotes.map((note, i) => (
+                <Text key={i} style={styles.safetyText}>
+                  {note}
                 </Text>
-                {card.safetyNotes.map((note, i) => (
-                  <SafetyNote key={i} note={note} />
-                ))}
-              </View>
-            </>
+              ))}
+            </TintPanel>
           )}
 
-          <Divider />
-
           {/* Privacy notice */}
-          <View style={styles.privacyNotice}>
-            <Text style={styles.privacyIcon}>🔒</Text>
+          <TintPanel
+            icon="location-outline"
+            iconColor={colors.textSecondary}
+            tint={colors.surface}
+          >
             <Text style={styles.privacyText}>
               The image above is an AI recreation — your original photo is stored privately
               and never shared. GPS coordinates are fuzzed per species sensitivity rules.
             </Text>
-          </View>
+          </TintPanel>
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
     </View>
   );
 }
@@ -471,8 +373,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
 
-const CARD_HEIGHT = 420;
-const CARD_MARGIN_H = spacing.md;
+const HERO_HEIGHT = 480;
 
 const styles = StyleSheet.create({
   root: {
@@ -482,30 +383,42 @@ const styles = StyleSheet.create({
   centred: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
+  },
+  scroll: {
+    flex: 1,
   },
 
-  /* ── Sticky header ── */
-  stickyHeader: {
+  /* ── Hero ── */
+  hero: {
+    height: HERO_HEIGHT,
+    width: '100%',
+    backgroundColor: colors.surfaceElevated,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroScrim: {
     position: 'absolute',
-    top: 0,
     left: 0,
     right: 0,
-    zIndex: 20,
-    backgroundColor: colors.background,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    bottom: 0,
+    height: '55%',
   },
-  stickyHeaderInner: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+  grabberWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 10,
   },
-  stickyTitle: {
-    ...typography.heading,
-    color: colors.textPrimary,
+  grabber: {
+    width: 36,
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.textDisabled,
   },
-
-  /* ── Floating action bar over card image ── */
-  floatingBar: {
+  heroTopBar: {
     position: 'absolute',
     left: spacing.md,
     right: spacing.md,
@@ -514,99 +427,37 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     zIndex: 10,
   },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconBtnPressed: {
-    opacity: 0.7,
-  },
-  iconBtnText: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    lineHeight: 30,
-    marginTop: Platform.OS === 'ios' ? -2 : 0,
-  },
-
-  /* ── Card image frame ── */
-  scroll: {
-    flex: 1,
-  },
-  cardFrame: {
-    marginHorizontal: CARD_MARGIN_H,
-    marginTop: spacing.xxl + spacing.lg,
-    marginBottom: 0,
-    borderRadius: radius.lg,
-    // Glow — works on iOS; Android elevation used as fallback
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 24,
-    shadowOpacity: 0.5,
-    elevation: 12,
-  },
-  cardBorder: {
-    borderWidth: 1.5,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  cardInner: {
-    height: CARD_HEIGHT,
-    backgroundColor: colors.surfaceElevated,
-    overflow: 'hidden',
-  },
-  imagePlaceholder: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  raritySheen: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  /* ── Mock placeholder ── */
-  mockPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cornerMark: {
-    position: 'absolute',
-    fontSize: 12,
-  },
-  cornerTL: { top: spacing.md, left: spacing.md },
-  cornerTR: { top: spacing.md, right: spacing.md },
-  cornerBL: { bottom: spacing.md, left: spacing.md },
-  cornerBR: { bottom: spacing.md, right: spacing.md },
-  scanlineLayer: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
-  scanline: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 0,
-    borderTopWidth: 1,
-  },
-  mockCenter: {
+  heroTopBarRight: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  mockIcon: {
-    fontSize: 80,
-    textShadowOffset: { width: 0, height: 0 },
+  glassCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  mockSlug: {
-    ...typography.title,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
+  glassCirclePressed: {
+    opacity: 0.7,
   },
-  mockNote: {
-    ...typography.caption,
-    color: colors.textMuted,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+  heroTextBlock: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    bottom: spacing.lg,
+    gap: spacing.xxs,
+  },
+  speciesName: {
+    ...typography.largeTitle,
+    color: colors.textPrimary,
+  },
+  scientificName: {
+    ...typography.callout,
+    fontStyle: 'italic',
+    color: colors.textTertiary,
   },
 
   /* ── Body content ── */
@@ -627,7 +478,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   firstDiscoveryIcon: {
-    fontSize: 22,
     marginTop: 2,
   },
   firstDiscoveryText: {
@@ -635,42 +485,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   firstDiscoveryTitle: {
-    ...typography.heading,
+    ...typography.headline,
   },
   firstDiscoveryBody: {
     ...typography.caption,
     color: colors.textSecondary,
   },
 
-  /* ── Identity block ── */
-  identityBlock: {
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  categoryChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs,
-  },
-  categoryChipText: {
-    ...typography.label,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  speciesName: {
-    ...typography.display,
-    color: colors.textPrimary,
-  },
-  scientificName: {
-    ...typography.body,
-    fontStyle: 'italic',
-    color: colors.textSecondary,
-  },
+  /* ── Captive tag ── */
   captiveTag: {
     alignSelf: 'flex-start',
     backgroundColor: `${colors.warning}22`,
@@ -679,6 +501,7 @@ const styles = StyleSheet.create({
     borderColor: `${colors.warning}60`,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+    marginBottom: spacing.md,
   },
   captiveTagText: {
     ...typography.caption,
@@ -686,58 +509,49 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  /* ── Score row ── */
-  scoreRow: {
+  /* ── Stats card (Apple Settings row list) ── */
+  statsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  statRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
-    paddingVertical: spacing.md,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.md,
   },
-  statGrid: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
+  statRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
   },
-  statCell: {
-    width: '46%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    gap: 2,
-  },
-  statLabel: {
+  statRowLabel: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
   },
-  statValue: {
+  statRowValueWrap: {
+    flexShrink: 1,
+    alignItems: 'flex-end',
+  },
+  statRowValue: {
     ...typography.body,
     color: colors.textPrimary,
-    fontWeight: '700',
-  },
-
-  /* ── Divider ── */
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginVertical: spacing.lg,
+    textAlign: 'right',
   },
 
   /* ── Sections ── */
   section: {
     gap: spacing.sm,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-    marginBottom: spacing.xs,
   },
   descriptionText: {
     ...typography.body,
@@ -745,126 +559,48 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
 
-  /* ── Discovery meta ── */
-  metaRow: {
+  /* ── Tint panels (safety + privacy) ── */
+  tintPanel: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  metaIcon: {
-    fontSize: 18,
-    marginTop: 2,
-    width: 24,
-    textAlign: 'center',
-  },
-  metaContent: {
-    flex: 1,
-    gap: 2,
-  },
-  metaLabel: {
-    ...typography.label,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  metaValue: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  hiddenLocation: {
-    color: colors.warning,
-    fontStyle: 'italic',
-  },
-  metaPrecision: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-
-  /* ── Safety notes ── */
-  safetySection: {
-    backgroundColor: `${colors.warning}0F`,
     borderRadius: radius.md,
     padding: spacing.md,
-    borderWidth: 1,
-    borderColor: `${colors.warning}30`,
-  },
-  safetyRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     gap: spacing.sm,
-    paddingVertical: spacing.xs / 2,
+    marginBottom: spacing.lg,
   },
-  safetyBullet: {
-    fontSize: 15,
-    color: colors.warning,
+  tintPanelIcon: {
     marginTop: 2,
-    width: 20,
-    textAlign: 'center',
+  },
+  tintPanelBody: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  tintPanelTitle: {
+    ...typography.headline,
   },
   safetyText: {
     ...typography.body,
     color: colors.textSecondary,
-    flex: 1,
     lineHeight: 22,
-  },
-
-  /* ── Privacy notice ── */
-  privacyNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
-  },
-  privacyIcon: {
-    fontSize: 16,
-    marginTop: 2,
   },
   privacyText: {
     ...typography.caption,
     color: colors.textMuted,
-    flex: 1,
     lineHeight: 18,
   },
 
   /* ── States ── */
-  loadingText: {
-    ...typography.body,
-    color: colors.textMuted,
-    marginTop: spacing.md,
-  },
   errorIcon: {
-    fontSize: 40,
-    color: colors.danger,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   errorTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
   },
   errorBody: {
     ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
-    paddingHorizontal: spacing.xl,
-    marginBottom: spacing.xl,
-  },
-  backBtn: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm + 2,
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-  },
-  backBtnText: {
-    ...typography.body,
-    color: colors.background,
-    fontWeight: '700',
+    marginBottom: spacing.md,
   },
 });
