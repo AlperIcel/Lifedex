@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
+  Easing,
   Image,
   Platform,
   Pressable,
@@ -30,6 +30,8 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -39,7 +41,9 @@ import { createSightingFromImage } from '@/services/sightingPipeline';
 import { MOCK_HINTS, type MockHint } from '@/providers/mock/mockVision';
 import { env } from '@/config/env';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
-import { colors, radius, spacing, typography } from '@/theme/theme';
+import { Button, Chip } from '@/components';
+import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
+import { haptics } from '@/utils/haptics';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -82,9 +86,51 @@ function FramingHint(): React.ReactElement {
       <View style={[styles.corner, styles.cornerTR]} />
       <View style={[styles.corner, styles.cornerBL]} />
       <View style={[styles.corner, styles.cornerBR]} />
-      <Text style={styles.framingHint}>
-        Frame the creature or plant clearly
-      </Text>
+      <View style={styles.framingHintPill}>
+        <Text style={styles.framingHint}>Frame the creature or plant clearly</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Four dots that light up one-at-a-time in sequence to signal pipeline
+ * progress (moderate → recognize → score → card) without claiming to track
+ * real phase boundaries. Purely decorative motion — loops while mounted.
+ */
+function PhaseProgressDots(): React.ReactElement {
+  const anims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    const stagger = Animated.loop(
+      Animated.stagger(
+        150,
+        anims.map((a) =>
+          Animated.sequence([
+            Animated.timing(a, { toValue: 1, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+            Animated.timing(a, { toValue: 0.25, duration: 260, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+          ]),
+        ),
+      ),
+    );
+    stagger.start();
+    return () => stagger.stop();
+  }, [anims]);
+
+  return (
+    <View style={styles.phaseRow}>
+      {anims.map((a, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.phaseDot,
+            {
+              opacity: a.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+              transform: [{ scale: a.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.15] }) }],
+            },
+          ]}
+        />
+      ))}
     </View>
   );
 }
@@ -103,13 +149,9 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
     return (
       <View style={styles.overlayContainer}>
         <View style={styles.overlayCard}>
-          <ActivityIndicator size="large" color={colors.teal} />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.overlayTitle}>{label}</Text>
-          <View style={styles.phaseRow}>
-            {(['check', 'identify', 'score', 'card'] as const).map((p) => (
-              <View key={p} style={[styles.phaseDot, styles.phaseDotActive]} />
-            ))}
-          </View>
+          <PhaseProgressDots />
         </View>
       </View>
     );
@@ -119,14 +161,20 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
     return (
       <View style={styles.overlayContainer}>
         <View style={styles.overlayCard}>
-          <Text style={styles.overlayIcon}>🚫</Text>
+          <View style={[styles.overlayIconWrap, styles.overlayIconWrapDanger]}>
+            <Ionicons name="shield-outline" size={32} color={colors.danger} />
+          </View>
           <Text style={styles.overlayTitle}>Photo blocked</Text>
           <Text style={styles.overlayBody}>
             {state.reasons.join('\n')}
           </Text>
-          <TouchableOpacity style={styles.overlayBtn} onPress={onDismiss}>
-            <Text style={styles.overlayBtnText}>Try another photo</Text>
-          </TouchableOpacity>
+          <Button
+            title="Try another photo"
+            variant="primary"
+            onPress={onDismiss}
+            fullWidth
+            style={styles.overlayBtnSpacing}
+          />
         </View>
       </View>
     );
@@ -136,19 +184,29 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
     return (
       <View style={styles.overlayContainer}>
         <View style={styles.overlayCard}>
-          <Text style={styles.overlayIcon}>✅</Text>
+          <View style={[styles.overlayIconWrap, styles.overlayIconWrapAccent]}>
+            <Ionicons name="checkmark-circle" size={32} color={colors.accent} />
+          </View>
           <Text style={styles.overlayTitle}>Already discovered</Text>
           <Text style={styles.overlayBody}>
             {state.sameSpotToday
               ? `You already logged ${state.species} near here today.`
               : `${state.species} is already in your collection. Find a new species to earn XP!`}
           </Text>
-          <TouchableOpacity style={styles.overlayBtn} onPress={onViewCollection}>
-            <Text style={styles.overlayBtnText}>View Collection</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.overlayBtnGhost} onPress={onDismiss}>
-            <Text style={styles.overlayBtnGhostText}>Keep exploring</Text>
-          </TouchableOpacity>
+          <Button
+            title="View Collection"
+            variant="primary"
+            onPress={onViewCollection}
+            fullWidth
+            style={styles.overlayBtnSpacing}
+          />
+          <Button
+            title="Keep exploring"
+            variant="ghost"
+            onPress={onDismiss}
+            fullWidth
+            style={styles.overlayBtnGhostSpacing}
+          />
         </View>
       </View>
     );
@@ -158,12 +216,18 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
     return (
       <View style={styles.overlayContainer}>
         <View style={styles.overlayCard}>
-          <Text style={styles.overlayIcon}>⚠️</Text>
+          <View style={[styles.overlayIconWrap, styles.overlayIconWrapWarning]}>
+            <Ionicons name="alert-circle-outline" size={32} color={colors.warning} />
+          </View>
           <Text style={styles.overlayTitle}>Something went wrong</Text>
           <Text style={styles.overlayBody}>{state.message}</Text>
-          <TouchableOpacity style={styles.overlayBtn} onPress={onDismiss}>
-            <Text style={styles.overlayBtnText}>Try again</Text>
-          </TouchableOpacity>
+          <Button
+            title="Try again"
+            variant="primary"
+            onPress={onDismiss}
+            fullWidth
+            style={styles.overlayBtnSpacing}
+          />
         </View>
       </View>
     );
@@ -172,15 +236,15 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
   return null;
 }
 
-/* Emoji + label for each mock test subject. */
-const MOCK_HINT_META: Record<MockHint, { icon: string; label: string }> = {
-  cat: { icon: '🐱', label: 'Cat' },
-  dog: { icon: '🐶', label: 'Dog' },
-  frog: { icon: '🐸', label: 'Frog' },
-  bird: { icon: '🐦', label: 'Bird' },
-  tree: { icon: '🌳', label: 'Tree' },
-  flower: { icon: '🌼', label: 'Flower' },
-  mushroom: { icon: '🍄', label: 'Mushroom' },
+/* Ionicon + label for each mock test subject (no emoji in chrome). */
+const MOCK_HINT_META: Record<MockHint, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  cat: { icon: 'paw-outline', label: 'Cat' },
+  dog: { icon: 'paw-outline', label: 'Dog' },
+  frog: { icon: 'leaf-outline', label: 'Frog' },
+  bird: { icon: 'egg-outline', label: 'Bird' },
+  tree: { icon: 'trail-sign-outline', label: 'Tree' },
+  flower: { icon: 'flower-outline', label: 'Flower' },
+  mushroom: { icon: 'nutrition-outline', label: 'Mushroom' },
 };
 
 interface MockPickerBarProps {
@@ -204,27 +268,22 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.mockChipRow}
       >
-        <TouchableOpacity
-          style={[styles.mockChip, selected === null && styles.mockChipActive]}
+        <Chip
+          label="Auto"
+          selected={selected === null}
           onPress={() => onSelect(null)}
-          accessibilityLabel="Auto-detect (random mock)"
-        >
-          <Text style={styles.mockChipIcon}>🎲</Text>
-          <Text style={styles.mockChipLabel}>Auto</Text>
-        </TouchableOpacity>
+          icon="shuffle-outline"
+        />
         {MOCK_HINTS.map((hint) => {
           const meta = MOCK_HINT_META[hint];
-          const active = selected === hint;
           return (
-            <TouchableOpacity
+            <Chip
               key={hint}
-              style={[styles.mockChip, active && styles.mockChipActive]}
+              label={meta.label}
+              selected={selected === hint}
               onPress={() => onSelect(hint)}
-              accessibilityLabel={`Test subject: ${meta.label}`}
-            >
-              <Text style={styles.mockChipIcon}>{meta.icon}</Text>
-              <Text style={styles.mockChipLabel}>{meta.label}</Text>
-            </TouchableOpacity>
+              icon={meta.icon}
+            />
           );
         })}
       </ScrollView>
@@ -304,6 +363,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
             result.reasons.length > 0
               ? result.reasons
               : ['This photo cannot be processed due to content policy.'];
+          haptics.error();
           setPipeline({ phase: 'blocked', reasons });
           return;
         }
@@ -311,6 +371,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         if (result.duplicate) {
           // Species already in the collection — no new card.
           setPreviewUri(null);
+          haptics.tap();
           setPipeline({
             phase: 'duplicate',
             species: result.species,
@@ -323,6 +384,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         setPreviewUri(null);
         navigation.navigate('Result', { sightingId: result.sightingId });
       } catch {
+        haptics.error();
         setPipeline({ phase: 'error', message: 'An unexpected error occurred.' });
       }
     },
@@ -334,6 +396,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
     if (captureActive || cameraRef.current === null) return;
 
     // Shutter animation
+    haptics.shutter();
     Animated.sequence([
       Animated.timing(shutterScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
       Animated.timing(shutterScale, { toValue: 1, duration: 80, useNativeDriver: true }),
@@ -345,6 +408,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         await runPipeline(photo.uri);
       }
     } catch {
+      haptics.error();
       setPipeline({ phase: 'error', message: 'Failed to take photo.' });
     }
   }, [captureActive, runPipeline, shutterScale]);
@@ -391,8 +455,6 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
   }
 
   /* ---------- Main render ---------- */
-  const { width: screenW, height: screenH } = Dimensions.get('window');
-
   return (
     <View style={styles.root}>
       {/* Full-screen camera */}
@@ -411,8 +473,17 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         />
       )}
 
-      {/* Dark vignette overlay */}
-      <View style={styles.vignette} pointerEvents="none" />
+      {/* Scrim gradients — top and bottom, transparent to near-black */}
+      <LinearGradient
+        colors={['rgba(5,9,7,0)', colors.overlay]}
+        style={styles.scrimTop}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['rgba(5,9,7,0)', colors.overlay]}
+        style={styles.scrimBottom}
+        pointerEvents="none"
+      />
 
       {/* Top bar */}
       <View style={styles.topBar}>
@@ -421,7 +492,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
           <Text style={styles.liveDotLabel}>LIVE</Text>
         </View>
         <Pressable style={styles.flipBtn} onPress={handleFlip} disabled={captureActive}>
-          <Text style={styles.flipIcon}>⟳</Text>
+          <Ionicons name="camera-reverse-outline" size={22} color={colors.textPrimary} />
         </Pressable>
       </View>
 
@@ -434,12 +505,10 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       )}
 
       {/* Bottom controls */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.xl, screenH * 0.05) }]}>
+      <View style={[styles.bottomBar, { paddingBottom: spacing.xxl }]}>
         {/* Left placeholder to keep the shutter centred. Gallery upload is
             intentionally removed — a catch must be a LIVE photo, not an old one. */}
-        <View style={[styles.sideBtn, { opacity: 0 }]} pointerEvents="none">
-          <Text style={styles.sideBtnIcon}>📷</Text>
-        </View>
+        <View style={[styles.sideBtn, { opacity: 0 }]} pointerEvents="none" />
 
         {/* Shutter */}
         <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
@@ -449,22 +518,19 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
             disabled={captureActive}
             accessibilityLabel="Capture photo"
           >
-            <View style={styles.shutterInner} />
+            {captureActive ? (
+              <View style={styles.shutterInnerActive}>
+                <ActivityIndicator size="small" color={colors.onAccent} />
+              </View>
+            ) : (
+              <View style={styles.shutterInner} />
+            )}
           </TouchableOpacity>
         </Animated.View>
 
         {/* Right placeholder to balance layout */}
-        <View style={[styles.sideBtn, { opacity: 0 }]} pointerEvents="none">
-          <Text style={styles.sideBtnIcon}>⟳</Text>
-        </View>
+        <View style={[styles.sideBtn, { opacity: 0 }]} pointerEvents="none" />
       </View>
-
-      {/* Screen width label for layout debug — remove in prod */}
-      {__DEV__ && (
-        <Text style={styles.devLabel}>
-          {screenW.toFixed(0)} × {screenH.toFixed(0)}
-        </Text>
-      )}
 
       {/* Pipeline overlay (processing / blocked / duplicate / error) */}
       <PipelineOverlay
@@ -480,7 +546,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
 
-const SHUTTER_SIZE = 76;
+const SHUTTER_SIZE = 78;
 const SHUTTER_INNER = 60;
 const CORNER_SIZE = 28;
 const CORNER_THICKNESS = 3;
@@ -498,17 +564,20 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
 
-  /* Vignette */
-  vignette: {
-    ...StyleSheet.absoluteFillObject,
-    // Top-heavy gradient simulation via multiple overlapping radial approach
-    // In RN without expo-linear-gradient we use a semi-transparent band.
-    borderWidth: 0,
-    borderTopWidth: 120,
-    borderBottomWidth: 180,
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
-    borderColor: 'rgba(0,0,0,0.65)',
+  /* Scrim gradients (replace the old border-hack vignette) */
+  scrimTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+  },
+  scrimBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 220,
   },
 
   /* Top bar */
@@ -524,7 +593,7 @@ const styles = StyleSheet.create({
   topBarBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: colors.overlay,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
@@ -539,19 +608,15 @@ const styles = StyleSheet.create({
   liveDotLabel: {
     ...typography.label,
     color: colors.textPrimary,
-    letterSpacing: 1.5,
+    textTransform: 'uppercase',
   },
   flipBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  flipIcon: {
-    fontSize: 20,
-    color: colors.textPrimary,
   },
 
   /* Framing */
@@ -564,8 +629,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: CORNER_SIZE,
     height: CORNER_SIZE,
-    borderColor: colors.teal,
-    opacity: 0.85,
+    borderColor: 'rgba(255,255,255,0.5)',
+    opacity: 1,
   },
   cornerTL: {
     top: '28%',
@@ -595,16 +660,18 @@ const styles = StyleSheet.create({
     borderRightWidth: CORNER_THICKNESS,
     borderBottomRightRadius: radius.sm,
   },
-  framingHint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  framingHintPill: {
+    marginTop: '46%',
+    backgroundColor: colors.overlay,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     overflow: 'hidden',
-    marginTop: '46%',
+  },
+  framingHint: {
+    ...typography.footnote,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 
   /* Mock picker bar */
@@ -619,7 +686,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.warning,
     textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.overlay,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
@@ -630,28 +697,6 @@ const styles = StyleSheet.create({
   mockChipRow: {
     gap: spacing.sm,
     paddingHorizontal: spacing.xs,
-  },
-  mockChip: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minWidth: 56,
-  },
-  mockChipActive: {
-    borderColor: colors.teal,
-    backgroundColor: colors.teal + '33',
-  },
-  mockChipIcon: {
-    fontSize: 22,
-  },
-  mockChipLabel: {
-    ...typography.label,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
 
   /* Bottom controls */
@@ -669,27 +714,18 @@ const styles = StyleSheet.create({
     width: 56,
     alignItems: 'center',
   },
-  sideBtnIcon: {
-    fontSize: 26,
-  },
-  sideBtnLabel: {
-    ...typography.label,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
   shutter: {
     width: SHUTTER_SIZE,
     height: SHUTTER_SIZE,
     borderRadius: SHUTTER_SIZE / 2,
-    borderWidth: 3,
-    borderColor: colors.textPrimary,
+    borderWidth: 3.5,
+    borderColor: 'rgba(255,255,255,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
   shutterDisabled: {
-    borderColor: colors.textMuted,
-    opacity: 0.5,
+    borderColor: 'rgba(255,255,255,0.4)',
   },
   shutterInner: {
     width: SHUTTER_INNER,
@@ -697,24 +733,33 @@ const styles = StyleSheet.create({
     borderRadius: SHUTTER_INNER / 2,
     backgroundColor: colors.textPrimary,
   },
+  shutterInnerActive: {
+    width: SHUTTER_INNER,
+    height: SHUTTER_INNER,
+    borderRadius: SHUTTER_INNER / 2,
+    backgroundColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   /* Pipeline overlay */
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,
   },
   overlayCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.xl,
     width: '100%',
     maxWidth: 340,
     alignItems: 'center',
+    ...elevation.level3,
   },
   overlayTitle: {
     ...typography.heading,
@@ -729,29 +774,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  overlayIcon: {
-    fontSize: 40,
+  overlayIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  overlayBtn: {
+  overlayIconWrapDanger: {
+    backgroundColor: `${colors.danger}22`,
+  },
+  overlayIconWrapAccent: {
+    backgroundColor: colors.accentSubtle,
+  },
+  overlayIconWrapWarning: {
+    backgroundColor: `${colors.warning}22`,
+  },
+  overlayBtnSpacing: {
     marginTop: spacing.lg,
-    backgroundColor: colors.teal,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.pill,
   },
-  overlayBtnText: {
-    ...typography.heading,
-    color: colors.background,
-    fontSize: 15,
-  },
-  overlayBtnGhost: {
+  overlayBtnGhostSpacing: {
     marginTop: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  overlayBtnGhostText: {
-    ...typography.body,
-    color: colors.textMuted,
   },
 
   /* Phase dots */
@@ -764,10 +807,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.border,
-  },
-  phaseDotActive: {
-    backgroundColor: colors.teal,
+    backgroundColor: colors.accent,
   },
 
   /* Permission */
@@ -792,15 +832,5 @@ const styles = StyleSheet.create({
   permBtnText: {
     ...typography.heading,
     color: colors.background,
-  },
-
-  /* Dev label */
-  devLabel: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
-    fontSize: 10,
-    color: colors.textMuted,
-    opacity: 0.5,
   },
 });
