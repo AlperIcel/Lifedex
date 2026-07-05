@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Pressable,
   FlatList,
+  Animated,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -18,23 +19,27 @@ import {
   Platform,
   SafeAreaView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation/types';
-import { colors, spacing, radius, typography } from '@/theme/theme';
+import { colors, spacing, radius, typography, motion } from '@/theme/theme';
 import { setOnboarded } from '@/lib/onboarding';
+import { Button } from '@/components';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
+type IconName = keyof typeof Ionicons.glyphMap;
+
 interface Step {
   id: string;
-  icon: string;
+  icon: IconName;
   accentColor: string;
   badge: string;
   title: string;
   subtitle: string;
-  rules: Array<{ icon: string; text: string }>;
+  rules: Array<{ icon: IconName; text: string }>;
 }
 
 // ─── content ─────────────────────────────────────────────────────────────────
@@ -42,54 +47,53 @@ interface Step {
 const STEPS: Step[] = [
   {
     id: 'respect',
-    icon: '🐾',
+    icon: 'paw-outline',
     accentColor: colors.success,      // moss green
     badge: 'RULE 01',
     title: 'Respect the Wild',
     subtitle: 'Every creature deserves space.',
     rules: [
-      { icon: '🐣', text: 'Never disturb nests, dens, or young animals.' },
-      { icon: '🔇', text: 'Observe silently — no sudden moves or noise.' },
-      { icon: '📸', text: 'Photograph from a safe distance. Zoom in, stay back.' },
+      { icon: 'egg-outline', text: 'Never disturb nests, dens, or young animals.' },
+      { icon: 'volume-mute-outline', text: 'Observe silently — no sudden moves or noise.' },
+      { icon: 'camera-outline', text: 'Photograph from a safe distance. Zoom in, stay back.' },
     ],
   },
   {
     id: 'boundaries',
-    icon: '🌿',
+    icon: 'trail-sign-outline',
     accentColor: colors.teal,
     badge: 'RULE 02',
     title: 'Honor Boundaries',
     subtitle: 'Discovery never justifies trespass.',
     rules: [
-      { icon: '🚧', text: 'Stay on public land and marked trails.' },
-      { icon: '🏡', text: 'Private property = off-limits, always.' },
-      { icon: '🌸', text: 'Do not collect, uproot, or damage plants.' },
+      { icon: 'walk-outline', text: 'Stay on public land and marked trails.' },
+      { icon: 'home-outline', text: 'Private property = off-limits, always.' },
+      { icon: 'leaf-outline', text: 'Do not collect, uproot, or damage plants.' },
     ],
   },
   {
     id: 'protect',
-    icon: '🛡️',
+    icon: 'shield-half-outline',
     accentColor: colors.amber,
     badge: 'RULE 03',
     title: 'Protect the Rare',
     subtitle: 'Some locations must stay secret.',
     rules: [
-      { icon: '📍', text: 'Exact GPS of protected species is never shared publicly.' },
-      { icon: '🦅', text: 'Rare & endangered sightings get extra location fuzz.' },
-      { icon: '🔒', text: 'Your original photo stays private — only AI cards go public.' },
+      { icon: 'location-outline', text: 'Exact GPS of protected species is never shared publicly.' },
+      { icon: 'eye-off-outline', text: 'Rare & endangered sightings get extra location fuzz.' },
+      { icon: 'lock-closed-outline', text: 'Your original photo stays private — only AI cards go public.' },
     ],
   },
 ];
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const CARD_W = SCREEN_W - spacing.lg * 2;
 
 // ─── sub-components ──────────────────────────────────────────────────────────
 
-const RuleRow = React.memo(({ icon, text }: { icon: string; text: string }) => (
+const RuleRow = React.memo(({ icon, text }: { icon: IconName; text: string }) => (
   <View style={styles.ruleRow}>
     <View style={styles.ruleIconBox}>
-      <Text style={styles.ruleIcon}>{icon}</Text>
+      <Ionicons name={icon} size={18} color={colors.textPrimary} />
     </View>
     <Text style={styles.ruleText}>{text}</Text>
   </View>
@@ -107,7 +111,7 @@ const StepCard = React.memo(({ step, index }: { step: Step; index: number }) => 
           <Text style={[styles.badgeText, { color: step.accentColor }]}>{step.badge}</Text>
         </View>
         <View style={[styles.iconCircle, { backgroundColor: step.accentColor + '18' }]}>
-          <Text style={styles.stepIcon}>{step.icon}</Text>
+          <Ionicons name={step.icon} size={26} color={step.accentColor} />
         </View>
       </View>
 
@@ -133,18 +137,36 @@ const StepCard = React.memo(({ step, index }: { step: Step; index: number }) => 
   </View>
 ));
 
-const Dot = React.memo(
-  ({ active, color }: { active: boolean; color: string }) => (
-    <View
+const DOT_WIDTH_INACTIVE = 6;
+const DOT_WIDTH_ACTIVE = 20;
+
+const Dot = React.memo(({ active, color }: { active: boolean; color: string }) => {
+  const width = useRef(new Animated.Value(active ? DOT_WIDTH_ACTIVE : DOT_WIDTH_INACTIVE)).current;
+  const isMounted = useRef(false);
+
+  React.useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    Animated.timing(width, {
+      toValue: active ? DOT_WIDTH_ACTIVE : DOT_WIDTH_INACTIVE,
+      duration: motion.duration.fast,
+      easing: motion.easing.standard,
+      // width cannot be animated on the native driver
+      useNativeDriver: false,
+    }).start();
+  }, [active, width]);
+
+  return (
+    <Animated.View
       style={[
         styles.dot,
-        active
-          ? { width: 22, backgroundColor: color }
-          : { width: 8, backgroundColor: colors.border },
+        { width, backgroundColor: active ? color : colors.border },
       ]}
     />
-  ),
-);
+  );
+});
 
 // ─── screen ──────────────────────────────────────────────────────────────────
 
@@ -194,7 +216,7 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
       <View style={styles.topBar}>
         {/* wordmark */}
         <View style={styles.wordmark}>
-          <Text style={styles.wordmarkIcon}>🌿</Text>
+          <Ionicons name="leaf-outline" size={18} color={colors.moss} />
           <Text style={styles.wordmarkText}>LifeDex</Text>
         </View>
         <Pressable
@@ -247,20 +269,20 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
         </View>
 
         {/* CTA button */}
-        <Pressable
+        <Button
+          title={isLast ? 'Start exploring' : 'Continue'}
           onPress={handleNext}
-          style={({ pressed }) => [
-            styles.ctaBtn,
-            { backgroundColor: activeStep.accentColor },
-            pressed && styles.ctaPressed,
-          ]}
-          accessibilityLabel={isLast ? 'Got it — enter LifeDex' : 'Next rule'}
-          accessibilityRole="button"
-        >
-          <Text style={styles.ctaBtnText}>
-            {isLast ? '✓  Got it' : 'Next  →'}
-          </Text>
-        </Pressable>
+          variant="primary"
+          size="lg"
+          fullWidth
+        />
+
+        {isLast ? (
+          <View style={styles.privacyFootnote}>
+            <Ionicons name="lock-closed-outline" size={13} color={colors.textTertiary} />
+            <Text style={styles.privacyFootnoteText}>Your data stays on this device</Text>
+          </View>
+        ) : null}
 
         {/* progress caption */}
         <Text style={styles.progressCaption}>
@@ -293,9 +315,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  wordmarkIcon: {
-    fontSize: 18,
-  },
   wordmarkText: {
     ...typography.heading,
     color: colors.textPrimary,
@@ -324,7 +343,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   heroTitle: {
-    ...typography.display,
+    ...typography.title1,
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
@@ -399,16 +418,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepIcon: {
-    fontSize: 26,
-  },
   cardTitle: {
-    ...typography.title,
+    ...typography.title2,
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
   cardSubtitle: {
-    ...typography.body,
+    ...typography.callout,
     color: colors.textSecondary,
     marginBottom: spacing.md,
   },
@@ -444,9 +460,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  ruleIcon: {
-    fontSize: 18,
-  },
   ruleText: {
     ...typography.body,
     color: colors.textPrimary,
@@ -470,25 +483,18 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   dot: {
-    height: 8,
+    height: 6,
     borderRadius: radius.pill,
-    // width set per-dot inline
+    // width animated per-dot (see Dot component)
   },
-  ctaBtn: {
-    width: CARD_W,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
+  privacyFootnote: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.xs,
   },
-  ctaPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  ctaBtnText: {
-    ...typography.heading,
-    color: '#fff',
-    letterSpacing: 0.5,
+  privacyFootnoteText: {
+    ...typography.footnote,
+    color: colors.textTertiary,
   },
   progressCaption: {
     ...typography.caption,

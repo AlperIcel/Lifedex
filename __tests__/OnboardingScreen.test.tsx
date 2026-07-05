@@ -91,7 +91,7 @@ describe('OnboardingScreen', () => {
 
   it('renders the CTA button', () => {
     const { getByRole } = renderScreen();
-    const ctaBtn = getByRole('button', { name: /Next|Got it/ });
+    const ctaBtn = getByRole('button', { name: /Continue|Start exploring/ });
     expect(ctaBtn).toBeTruthy();
   });
 
