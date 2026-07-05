@@ -1,23 +1,26 @@
 /**
  * LeaderboardScreen — global XP ranking, top-3 podium, your-rank row.
- * All data is mock; no API keys required.
+ *
+ * Data source: `loadLeaderboard()` (src/lib/leaderboard.ts) — real community
+ * aggregation when Supabase is configured, simulated (mock) data otherwise or
+ * on any failure. A source Chip in the header tells you which one you're
+ * looking at ("Community" / "Simulated").
+ *
+ * Global/Weekly/Local segmented control is visual-only for now: all three
+ * tabs render the same aggregated data (no time/geo windowing yet).
  */
-import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  StatusBar,
-  Dimensions,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+
 import type { RootTabParamList } from '@/navigation/types';
 import type { Rarity } from '@/domain/types';
-import { colors, rarityColors, spacing, radius, typography } from '@/theme/theme';
+import { colors, radius, spacing, typography } from '@/theme/theme';
 import type { LeaderboardEntry } from '@/screens/leaderboard/mockData';
-import { useLifeDexStore } from '@/store/useLifeDexStore';
+import { loadLeaderboard, type LeaderboardResult } from '@/lib/leaderboard';
+import { Chip, EmptyState, LoadingState, ScreenContainer } from '@/components';
+import { haptics } from '@/utils/haptics';
 
 /* ------------------------------------------------------------------ */
 /* Screen prop type                                                     */
@@ -26,46 +29,66 @@ import { useLifeDexStore } from '@/store/useLifeDexStore';
 type Props = BottomTabScreenProps<RootTabParamList, 'Leaderboard'>;
 
 /* ------------------------------------------------------------------ */
-/* Constants                                                           */
+/* Medal colors (semantic — not part of the shared theme palette)      */
 /* ------------------------------------------------------------------ */
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const PODIUM_CARD_WIDTH = (SCREEN_WIDTH - spacing.lg * 2 - spacing.md * 2) / 3;
+const MEDAL = {
+  gold: '#F5B841',
+  silver: '#C9D1CC',
+  bronze: '#CD7F32',
+} as const;
+
+const RANK_MEDAL_COLOR: Record<number, string> = {
+  1: MEDAL.gold,
+  2: MEDAL.silver,
+  3: MEDAL.bronze,
+};
 
 const RARITY_BORDER: Record<Rarity, string> = {
   common: colors.border,
-  uncommon: rarityColors.uncommon,
-  rare: rarityColors.rare,
-  epic: rarityColors.epic,
-  legendary: rarityColors.legendary,
-};
-
-const RANK_MEDAL: Record<number, string> = {
-  1: '🥇',
-  2: '🥈',
-  3: '🥉',
+  uncommon: colors.success,
+  rare: colors.info,
+  epic: '#A66CFF',
+  legendary: MEDAL.gold,
 };
 
 /* ------------------------------------------------------------------ */
-/* Small reusable components                                           */
+/* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-/** Avatar placeholder built from username initials + rarity accent ring. */
+/** XP formatted with K/M suffix. */
+function xpLabel(xp: number): string {
+  if (xp >= 1_000_000) return `${(xp / 1_000_000).toFixed(1)}M`;
+  if (xp >= 1_000) return `${(xp / 1_000).toFixed(1)}K`;
+  return String(xp);
+}
+
+function initialsFor(username: string): string {
+  return username
+    .split(/[\s_-]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => (w[0] ?? '').toUpperCase())
+    .join('');
+}
+
+/* ------------------------------------------------------------------ */
+/* Avatar                                                              */
+/* ------------------------------------------------------------------ */
+
 function Avatar({
   username,
   rarity,
   size,
+  ringColor,
 }: {
   username: string;
   rarity: Rarity;
   size: number;
+  /** Overrides the rarity-derived ring colour (used for podium medal rings). */
+  ringColor?: string;
 }) {
-  const initials = username
-    .split(/[\s_-]/)
-    .slice(0, 2)
-    .map((w) => (w[0] ?? '').toUpperCase())
-    .join('');
-
+  const borderColor = ringColor ?? RARITY_BORDER[rarity];
   return (
     <View
       style={[
@@ -74,83 +97,61 @@ function Avatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          borderColor: RARITY_BORDER[rarity],
+          borderColor,
           borderWidth: 2,
         },
       ]}
     >
-      <Text style={[styles.avatarText, { fontSize: size * 0.38 }]}>{initials}</Text>
+      <Text style={[styles.avatarText, { fontSize: size * 0.36 }]}>{initialsFor(username)}</Text>
     </View>
   );
-}
-
-/** Rarity badge pill shown next to usernames. */
-function RarityBadge({ rarity }: { rarity: Rarity }) {
-  return (
-    <View style={[styles.rarityBadge, { borderColor: rarityColors[rarity] }]}>
-      <Text style={[styles.rarityBadgeText, { color: rarityColors[rarity] }]}>
-        {rarity.toUpperCase()}
-      </Text>
-    </View>
-  );
-}
-
-/** XP formatted with K suffix. */
-function xpLabel(xp: number): string {
-  if (xp >= 1_000_000) return `${(xp / 1_000_000).toFixed(1)}M`;
-  if (xp >= 1_000) return `${(xp / 1_000).toFixed(1)}K`;
-  return String(xp);
 }
 
 /* ------------------------------------------------------------------ */
 /* Podium (top 3)                                                      */
 /* ------------------------------------------------------------------ */
 
-const PODIUM_HEIGHTS: Record<number, number> = { 1: 90, 2: 64, 3: 50 };
 const PODIUM_ORDER = [2, 1, 3] as const; // left-centre-right visual order
 
-function PodiumColumn({ entry }: { entry: LeaderboardEntry }) {
-  const barHeight = PODIUM_HEIGHTS[entry.rank] ?? 50;
-  const isFirst = entry.rank === 1;
+function RankBadge({ rank }: { rank: number }) {
+  return (
+    <View style={[styles.rankBadge, { backgroundColor: RANK_MEDAL_COLOR[rank] ?? colors.surfaceHigh }]}>
+      <Text style={styles.rankBadgeText}>{rank}</Text>
+    </View>
+  );
+}
+
+function PodiumColumn({ entry, isWinner }: { entry: LeaderboardEntry; isWinner: boolean }) {
+  const fade = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fade, {
+      toValue: 1,
+      duration: 320,
+      useNativeDriver: true,
+    }).start();
+  }, [fade]);
 
   return (
-    <View style={[styles.podiumColumn, { width: PODIUM_CARD_WIDTH }]}>
-      {/* Crown for first place */}
-      {isFirst && (
-        <Text style={styles.crownIcon}>👑</Text>
-      )}
-
-      <Avatar username={entry.username} rarity={entry.topRarity} size={isFirst ? 56 : 44} />
-
-      <Text
-        style={[styles.podiumUsername, isFirst && styles.podiumUsernameFirst]}
-        numberOfLines={1}
-      >
+    <Animated.View
+      style={[
+        styles.podiumCard,
+        isWinner && styles.podiumCardWinner,
+        { opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
+      ]}
+    >
+      <RankBadge rank={entry.rank} />
+      <Avatar
+        username={entry.username}
+        rarity={entry.topRarity}
+        size={isWinner ? 56 : 44}
+        ringColor={RANK_MEDAL_COLOR[entry.rank]}
+      />
+      <Text style={[styles.podiumUsername, isWinner && styles.podiumUsernameWinner]} numberOfLines={1}>
         {entry.username}
       </Text>
-
       <Text style={styles.podiumXp}>{xpLabel(entry.xp)} XP</Text>
-
-      {/* Podium base bar */}
-      <View
-        style={[
-          styles.podiumBar,
-          {
-            height: barHeight,
-            backgroundColor:
-              entry.rank === 1
-                ? colors.amber
-                : entry.rank === 2
-                ? colors.textSecondary
-                : '#8B6914',
-            borderTopLeftRadius: radius.sm,
-            borderTopRightRadius: radius.sm,
-          },
-        ]}
-      >
-        <Text style={styles.podiumRankText}>#{entry.rank}</Text>
-      </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -163,7 +164,7 @@ function Podium({ entries }: { entries: LeaderboardEntry[] }) {
       {PODIUM_ORDER.map((rank) => {
         const entry = byRank[rank];
         if (!entry) return null;
-        return <PodiumColumn key={rank} entry={entry} />;
+        return <PodiumColumn key={rank} entry={entry} isWinner={rank === 1} />;
       })}
     </View>
   );
@@ -173,104 +174,46 @@ function Podium({ entries }: { entries: LeaderboardEntry[] }) {
 /* List row (rank 4+)                                                  */
 /* ------------------------------------------------------------------ */
 
-function LeaderRow({
-  entry,
-  isCurrentUser,
-}: {
-  entry: LeaderboardEntry;
-  isCurrentUser: boolean;
-}) {
+function LeaderRow({ entry, isCurrentUser }: { entry: LeaderboardEntry; isCurrentUser: boolean }) {
   return (
-    <View
-      style={[
-        styles.leaderRow,
-        isCurrentUser && styles.leaderRowSelf,
-      ]}
-    >
-      {/* Rank number */}
+    <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowSelf]}>
       <View style={styles.rankCell}>
-        <Text style={[styles.rankNum, isCurrentUser && { color: colors.teal }]}>
-          {RANK_MEDAL[entry.rank] ?? `#${entry.rank}`}
-        </Text>
+        <Text style={[styles.rankNum, isCurrentUser && styles.rankNumSelf]}>{entry.rank}</Text>
       </View>
 
-      {/* Avatar */}
       <Avatar username={entry.username} rarity={entry.topRarity} size={38} />
 
-      {/* Name + badge */}
       <View style={styles.leaderNameBlock}>
-        <Text
-          style={[styles.leaderUsername, isCurrentUser && { color: colors.teal }]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.leaderUsername, isCurrentUser && styles.leaderUsernameSelf]} numberOfLines={1}>
           {entry.username}
           {isCurrentUser ? '  (You)' : ''}
         </Text>
-        <RarityBadge rarity={entry.topRarity} />
+        <Text style={styles.leaderFootnote}>{entry.sightings} found</Text>
       </View>
 
-      {/* Stats */}
-      <View style={styles.leaderStats}>
-        <Text style={styles.leaderXp}>{xpLabel(entry.xp)}</Text>
-        <Text style={styles.leaderXpLabel}>XP</Text>
-      </View>
-
-      <View style={styles.leaderSightings}>
-        <Text style={styles.leaderSightingCount}>{entry.sightings}</Text>
-        <Text style={styles.leaderSightingLabel}>found</Text>
-      </View>
+      <Text style={styles.leaderXp}>{xpLabel(entry.xp)}</Text>
     </View>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Your-rank sticky footer                                             */
-/* ------------------------------------------------------------------ */
-
-function YourRankBar({ entry }: { entry: LeaderboardEntry }) {
-  return (
-    <View style={styles.yourRankBar}>
-      <View style={styles.yourRankLeft}>
-        <Text style={styles.yourRankLabel}>Your rank</Text>
-        <Text style={styles.yourRankNumber}>#{entry.rank}</Text>
-      </View>
-
-      <Avatar username={entry.username} rarity={entry.topRarity} size={36} />
-
-      <View style={styles.yourRankRight}>
-        <Text style={styles.yourRankXp}>{xpLabel(entry.xp)} XP</Text>
-        <Text style={styles.yourRankSightings}>{entry.sightings} sightings</Text>
-      </View>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Filter tabs                                                         */
+/* Segmented control (Global / Weekly / Local) — visual only            */
 /* ------------------------------------------------------------------ */
 
 type FilterTab = 'Global' | 'Weekly' | 'Local';
 const FILTER_TABS: FilterTab[] = ['Global', 'Weekly', 'Local'];
 
-function FilterTabs({
-  active,
-  onSelect,
-}: {
-  active: FilterTab;
-  onSelect: (t: FilterTab) => void;
-}) {
+function SegmentedControl({ active, onSelect }: { active: FilterTab; onSelect: (t: FilterTab) => void }) {
   return (
-    <View style={styles.filterTabRow}>
+    <View style={styles.segmentRow}>
       {FILTER_TABS.map((tab) => (
         <TouchableOpacity
           key={tab}
-          style={[styles.filterTab, active === tab && styles.filterTabActive]}
+          style={[styles.segment, active === tab && styles.segmentActive]}
           onPress={() => onSelect(tab)}
           activeOpacity={0.75}
         >
-          <Text style={[styles.filterTabText, active === tab && styles.filterTabTextActive]}>
-            {tab}
-          </Text>
+          <Text style={[styles.segmentText, active === tab && styles.segmentTextActive]}>{tab}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -283,67 +226,103 @@ function FilterTabs({
 
 export default function LeaderboardScreen(_props: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('Global');
+  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<LeaderboardResult | null>(null);
 
-  const { leaderboardEntries, currentUserId } = useLifeDexStore();
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadLeaderboard()
+      .then((r) => {
+        if (!cancelled) setResult(r);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // All entries; top-3 go into podium, rest into flat list
-  const podiumEntries = useMemo(
-    () => leaderboardEntries.filter((e) => e.rank <= 3),
-    [leaderboardEntries],
-  );
-  const listEntries = useMemo(
-    () => leaderboardEntries.filter((e) => e.rank > 3),
-    [leaderboardEntries],
-  );
+  const entries = result?.entries ?? [];
+  const source = result?.source ?? 'simulated';
 
+  const podiumEntries = useMemo(() => entries.filter((e) => e.rank <= 3), [entries]);
+  const listEntries = useMemo(() => entries.filter((e) => e.rank > 3), [entries]);
+
+  const myUserId = result?.myUserId ?? null;
   const currentUserEntry = useMemo(
-    () => leaderboardEntries.find((e) => e.userId === currentUserId),
-    [leaderboardEntries, currentUserId],
+    () => (myUserId === null ? undefined : entries.find((e) => e.userId === myUserId)),
+    [entries, myUserId],
   );
 
-  const renderItem = ({ item }: { item: LeaderboardEntry }) => (
-    <LeaderRow entry={item} isCurrentUser={item.userId === currentUserId} />
-  );
+  const handleSelectFilter = useCallback((tab: FilterTab) => {
+    haptics.tap();
+    setActiveFilter(tab);
+  }, []);
 
-  const ListHeader = (
-    <View>
-      {/* Screen title */}
-      <View style={styles.headerBlock}>
-        <Text style={styles.screenTitle}>Leaderboard</Text>
-        <Text style={styles.screenSubtitle}>Top LifeDex explorers worldwide</Text>
-      </View>
+  if (loading) {
+    return (
+      <ScreenContainer title="Leaderboard" largeTitle>
+        <LoadingState label="Loading rankings..." />
+      </ScreenContainer>
+    );
+  }
 
-      {/* Filter tabs */}
-      <FilterTabs active={activeFilter} onSelect={setActiveFilter} />
-
-      {/* Podium */}
-      <Podium entries={podiumEntries} />
-
-      {/* Divider */}
-      <View style={styles.divider} />
-
-      <Text style={styles.sectionLabel}>Ranking</Text>
-    </View>
-  );
+  if (entries.length === 0) {
+    return (
+      <ScreenContainer title="Leaderboard" largeTitle>
+        <EmptyState icon="podium-outline" title="No rankings yet" message="Check back soon — the leaderboard fills in as explorers log sightings." />
+      </ScreenContainer>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      <FlatList<LeaderboardEntry>
-        data={listEntries}
-        keyExtractor={(item) => item.userId}
-        renderItem={renderItem}
-        ListHeaderComponent={ListHeader}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        // Scroll past the sticky bar at the bottom
-        contentInset={{ bottom: 72 }}
-      />
+      <ScreenContainer
+        title="Leaderboard"
+        largeTitle
+        scrollable
+        padBottom
+        rightAccessory={
+          <Chip
+            label={source === 'community' ? 'Community' : 'Simulated'}
+            selected={source === 'community'}
+            onPress={() => {}}
+            icon={source === 'community' ? 'people' : 'flask-outline'}
+          />
+        }
+      >
+        <SegmentedControl active={activeFilter} onSelect={handleSelectFilter} />
 
-      {/* Sticky your-rank bar */}
+        <Podium entries={podiumEntries} />
+
+        <View style={styles.divider} />
+        <Text style={styles.sectionLabel}>Ranking</Text>
+
+        <View>
+          {listEntries.map((entry) => (
+            <LeaderRow key={entry.userId} entry={entry} isCurrentUser={entry.userId === myUserId} />
+          ))}
+        </View>
+      </ScreenContainer>
+
       {currentUserEntry !== undefined && (
-        <YourRankBar entry={currentUserEntry} />
+        <View style={styles.yourRankBar}>
+          <View style={styles.yourRankLeft}>
+            <Text style={styles.yourRankLabel}>Your rank</Text>
+            <Text style={styles.yourRankNumber}>#{currentUserEntry.rank}</Text>
+          </View>
+
+          <Avatar username={currentUserEntry.username} rarity={currentUserEntry.topRarity} size={36} />
+
+          <View style={styles.yourRankRight}>
+            <Text style={styles.yourRankXp}>{xpLabel(currentUserEntry.xp)} XP</Text>
+            <Text style={styles.yourRankSightings}>{currentUserEntry.sightings} found</Text>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -359,46 +338,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
 
-  /* Header */
-  headerBlock: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  screenTitle: {
-    ...typography.display,
-    color: colors.textPrimary,
-  },
-  screenSubtitle: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-
-  /* Filter */
-  filterTabRow: {
+  /* Segmented control */
+  segmentRow: {
     flexDirection: 'row',
-    marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
     padding: 4,
   },
-  filterTab: {
+  segment: {
     flex: 1,
     paddingVertical: spacing.sm,
     alignItems: 'center',
     borderRadius: radius.pill,
   },
-  filterTabActive: {
-    backgroundColor: colors.teal,
+  segmentActive: {
+    backgroundColor: colors.accent,
   },
-  filterTabText: {
+  segmentText: {
     ...typography.label,
     color: colors.textMuted,
   },
-  filterTabTextActive: {
-    color: colors.background,
+  segmentTextActive: {
+    color: colors.onAccent,
     fontWeight: '700',
   },
 
@@ -407,42 +369,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-  podiumColumn: {
+  podiumCard: {
+    flex: 1,
     alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.xs,
   },
-  crownIcon: {
-    fontSize: 24,
-    marginBottom: spacing.xs,
+  podiumCardWinner: {
+    paddingVertical: spacing.md + 8, // ~8px taller than the side cards
+    borderColor: MEDAL.gold,
+    backgroundColor: colors.surfaceElevated,
+  },
+  rankBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankBadgeText: {
+    ...typography.caption,
+    color: colors.onAccent,
+    fontWeight: '800',
   },
   podiumUsername: {
-    ...typography.label,
+    ...typography.footnote,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
     textAlign: 'center',
   },
-  podiumUsernameFirst: {
+  podiumUsernameWinner: {
     color: colors.textPrimary,
     fontWeight: '700',
   },
   podiumXp: {
-    ...typography.label,
+    ...typography.caption,
     color: colors.amber,
-    marginBottom: spacing.sm,
-  },
-  podiumBar: {
-    width: '100%',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingTop: spacing.sm,
-  },
-  podiumRankText: {
-    ...typography.heading,
-    color: colors.background,
-    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
 
   /* Avatar */
@@ -456,116 +426,81 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* Rarity badge */
-  rarityBadge: {
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    alignSelf: 'flex-start',
-  },
-  rarityBadgeText: {
-    ...typography.label,
-    fontSize: 9,
-  },
-
   /* Section divider */
   divider: {
     height: 1,
     backgroundColor: colors.border,
-    marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
   sectionLabel: {
     ...typography.label,
     color: colors.textMuted,
-    marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-  },
-
-  /* List */
-  listContent: {
-    paddingBottom: spacing.xxl,
   },
 
   /* Leader row */
   leaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
+    height: 56,
     gap: spacing.sm,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
   },
   leaderRowSelf: {
-    backgroundColor: colors.surface,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.teal,
+    backgroundColor: colors.accentSubtle,
+    borderWidth: 1,
+    borderColor: colors.accent,
   },
   rankCell: {
-    width: 36,
+    width: 32,
     alignItems: 'center',
   },
   rankNum: {
-    ...typography.body,
+    ...typography.headline,
     color: colors.textMuted,
-    fontWeight: '700',
     fontVariant: ['tabular-nums'],
+  },
+  rankNumSelf: {
+    color: colors.accent,
   },
   leaderNameBlock: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   leaderUsername: {
     ...typography.body,
     color: colors.textPrimary,
+  },
+  leaderUsernameSelf: {
+    color: colors.accent,
     fontWeight: '600',
   },
-  leaderStats: {
-    alignItems: 'flex-end',
-    minWidth: 56,
+  leaderFootnote: {
+    ...typography.footnote,
+    color: colors.textTertiary,
   },
   leaderXp: {
-    ...typography.body,
-    color: colors.amber,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  leaderXpLabel: {
-    ...typography.label,
-    color: colors.textMuted,
-  },
-  leaderSightings: {
-    alignItems: 'flex-end',
-    minWidth: 44,
-  },
-  leaderSightingCount: {
-    ...typography.body,
+    ...typography.headline,
     color: colors.textPrimary,
-    fontWeight: '600',
     fontVariant: ['tabular-nums'],
-  },
-  leaderSightingLabel: {
-    ...typography.label,
-    color: colors.textMuted,
+    textAlign: 'right',
+    minWidth: 56,
   },
 
   /* Your rank bar */
   yourRankBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.surfaceElevated,
     borderTopWidth: 1,
-    borderTopColor: colors.teal,
+    borderTopColor: colors.accent,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    paddingBottom: spacing.lg, // safe area buffer
+    paddingBottom: spacing.lg,
     gap: spacing.md,
   },
   yourRankLeft: {
@@ -578,8 +513,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   yourRankNumber: {
-    ...typography.title,
-    color: colors.teal,
+    ...typography.title2,
+    color: colors.accent,
     fontWeight: '800',
   },
   yourRankRight: {
@@ -587,9 +522,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   yourRankXp: {
-    ...typography.heading,
+    ...typography.headline,
     color: colors.amber,
-    fontWeight: '700',
   },
   yourRankSightings: {
     ...typography.caption,
