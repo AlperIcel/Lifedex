@@ -1,40 +1,50 @@
 /**
- * CollectionScreen — grid of all collected cards with filter chips and completion %.
+ * CollectionScreen — Apple-grade grid of collected cards.
  *
  * Layout:
- *  - Fixed header: title + XP progress bar
- *  - Horizontal filter chips: ALL | Rarity | Category
- *  - Completion badge (X / N species discovered)
- *  - 2-column FlatList of CollectionCardThumbnail tiles
- *  - Tapping a card navigates to CardDetail
+ *  - ScreenContainer large-title header ("Collection") + LVL accessory
+ *  - Completion footnote ("X of N species") over a thin 3px accent bar
+ *  - Two chip rows: rarity (with rarity-colour dots) and category
+ *  - 2-column grid of card tiles (MockCardImage art + scrim + name + rarity)
+ *  - Undiscovered species render as locked placeholder tiles (capped)
+ *  - Tap tile → CardDetail; empty states for "filtered empty" and "no cards"
  *
  * Runs fully in mock mode — no API keys, no Supabase required.
  *
- * Data source: useLifeDexStore (single source of truth). collectionCards are
- * read via listCollection(); each card links back to its Sighting via sightingId.
- * New captures added via sightingPipeline appear here automatically because the
- * pipeline writes to lifeDexStore.addSighting before navigating away.
+ * Data source: useLifeDexStore (single source of truth). collectionCards link
+ * back to their Sighting via sightingId; new captures appear automatically.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
-  Platform,
-  StatusBar,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { Category, Rarity, Sighting } from '@/domain/types';
-import { colors, rarityColors, radius, spacing, typography } from '@/theme/theme';
+import {
+  colors,
+  gutter,
+  motion,
+  radius,
+  rarityColors,
+  scrimGradient,
+  spacing,
+  typography,
+} from '@/theme/theme';
 import type { RootStackParamList } from '@/navigation/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import type { CollectionCard } from '@/store/useLifeDexStore';
-import { CollectionCardThumbnail } from '@/components/CollectionCardThumbnail';
-import { FilterChipBar } from '@/components/FilterChipBar';
-import { CompletionBadge } from '@/components/CompletionBadge';
+import { Chip, EmptyState, MockCardImage, RarityBadge, ScreenContainer } from '@/components';
+import { haptics } from '@/utils/haptics';
 import { TOTAL_SPECIES_COUNT } from '@/constants/species';
 
 /* ------------------------------------------------------------------ */
@@ -51,6 +61,11 @@ interface CardRow {
   cardId: string;
   sighting: Sighting;
 }
+
+/** Grid item: an owned card tile or a locked "undiscovered" placeholder. */
+type GridItem =
+  | { kind: 'card'; cardId: string; sighting: Sighting }
+  | { kind: 'locked'; id: string };
 
 const RARITY_FILTERS: RarityFilter[] = ['all', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
 const CATEGORY_FILTERS: CategoryFilter[] = ['all', 'animal', 'plant', 'tree', 'mushroom'];
@@ -73,6 +88,14 @@ const CATEGORY_LABELS: Record<CategoryFilter, string> = {
   unknown: 'Unknown',
 };
 
+/** Grid gutter between tiles. */
+const GRID_GAP = spacing.sm + 4;
+/** Cap locked placeholder tiles to roughly one screenful. */
+const MAX_LOCKED_SLOTS = 8;
+/** Stagger config for the mount fade-in. */
+const STAGGER_COUNT = 12;
+const STAGGER_STEP_MS = 40;
+
 /* ------------------------------------------------------------------ */
 /* Screen                                                               */
 /* ------------------------------------------------------------------ */
@@ -81,14 +104,12 @@ export function CollectionScreen(): React.JSX.Element {
   const navigation = useNavigation<CollectionNav>();
   const store = useLifeDexStore();
 
-  // Read collection cards and linked sightings from the single source of truth.
   const collectionCards: CollectionCard[] = store.collectionCards;
-  const { profile } = store;
-  const totalXp = profile.xp;
-  const level = profile.level;
+  const level = store.profile.level;
 
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const isFiltered = rarityFilter !== 'all' || categoryFilter !== 'all';
 
   /**
    * Build CardRow pairs: resolve each CollectionCard to its Sighting.
@@ -105,6 +126,12 @@ export function CollectionScreen(): React.JSX.Element {
     }, []);
   }, [collectionCards, store]);
 
+  /* Unique species owned (duplicates of a species count once). */
+  const discoveredSpecies = useMemo(
+    () => new Set(allRows.map((r) => r.sighting.commonName)).size,
+    [allRows],
+  );
+
   /* Apply rarity + category filters */
   const filtered = useMemo<CardRow[]>(() => {
     return allRows.filter(({ sighting }) => {
@@ -114,122 +141,229 @@ export function CollectionScreen(): React.JSX.Element {
     });
   }, [allRows, rarityFilter, categoryFilter]);
 
-  /* XP progress within current level (every 500 XP = 1 level) */
-  const XP_PER_LEVEL = 500;
-  const xpIntoLevel = totalXp % XP_PER_LEVEL;
-  const xpProgress = xpIntoLevel / XP_PER_LEVEL;
+  /**
+   * Grid data: owned tiles, then locked "undiscovered" placeholders. Locked
+   * slots only appear in the unfiltered view when the known-species catalogue
+   * (TOTAL_SPECIES_COUNT, mirrors seed.sql) exceeds what the player owns.
+   */
+  const gridData = useMemo<GridItem[]>(() => {
+    const rows: GridItem[] = filtered.map((r) => ({
+      kind: 'card',
+      cardId: r.cardId,
+      sighting: r.sighting,
+    }));
+    if (!isFiltered && rows.length > 0 && discoveredSpecies < TOTAL_SPECIES_COUNT) {
+      const lockedCount = Math.min(TOTAL_SPECIES_COUNT - discoveredSpecies, MAX_LOCKED_SLOTS);
+      for (let i = 0; i < lockedCount; i++) {
+        rows.push({ kind: 'locked', id: `locked-${i}` });
+      }
+    }
+    return rows;
+  }, [filtered, isFiltered, discoveredSpecies]);
+
+  const completion =
+    TOTAL_SPECIES_COUNT > 0 ? Math.min(1, discoveredSpecies / TOTAL_SPECIES_COUNT) : 0;
 
   /* Navigate to CardDetail with the real CollectionCard id */
   const handleCardPress = useCallback(
     (cardId: string) => {
+      haptics.press();
       navigation.navigate('CardDetail', { cardId });
     },
     [navigation],
   );
 
-  /* Render each grid tile */
+  const handleOpenCamera = useCallback(() => {
+    navigation.navigate('Tabs', { screen: 'Capture' });
+  }, [navigation]);
+
+  const handleClearFilters = useCallback(() => {
+    setRarityFilter('all');
+    setCategoryFilter('all');
+  }, []);
+
   const renderItem = useCallback(
-    ({ item }: { item: CardRow }) => (
-      <CollectionCardThumbnail
-        sighting={item.sighting}
-        onPress={() => handleCardPress(item.cardId)}
-      />
+    ({ item, index }: { item: GridItem; index: number }) => (
+      <GridTile item={item} index={index} onPressCard={handleCardPress} />
     ),
     [handleCardPress],
   );
 
-  const keyExtractor = useCallback((item: CardRow) => item.cardId, []);
+  const keyExtractor = useCallback(
+    (item: GridItem) => (item.kind === 'card' ? item.cardId : item.id),
+    [],
+  );
+
+  /* Empty state: whole collection empty (real-mode fresh install) vs filters */
+  const listEmpty =
+    allRows.length === 0 ? (
+      <EmptyState
+        icon="leaf-outline"
+        title="Your LifeDex is empty"
+        message="Head outside and capture your first wild species to start the collection."
+        actionTitle="Open camera"
+        onAction={handleOpenCamera}
+      />
+    ) : (
+      <EmptyState
+        icon="search-outline"
+        title="Nothing here yet"
+        message="No cards match the current filters."
+        actionTitle="Clear filters"
+        onAction={handleClearFilters}
+      />
+    );
 
   /* ------------------------------------------------------------------ */
   /* Layout                                                              */
   /* ------------------------------------------------------------------ */
 
   return (
-    <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Collection</Text>
-        <View style={styles.levelRow}>
-          <Text style={styles.levelLabel}>LVL {level}</Text>
-          <Text style={styles.xpLabel}>{totalXp.toLocaleString()} XP</Text>
-        </View>
-        <View style={styles.progressTrack}>
+    <ScreenContainer
+      title="Collection"
+      largeTitle
+      padBottom={false}
+      contentStyle={styles.content}
+      rightAccessory={<Text style={styles.levelAccessory}>LVL {level}</Text>}
+    >
+      {/* ── Completion line + thin accent bar ── */}
+      <View style={styles.completionBlock}>
+        <Text style={styles.completionText}>
+          {discoveredSpecies} of {TOTAL_SPECIES_COUNT} species
+        </Text>
+        <View style={styles.completionTrack}>
           <View
-            style={[
-              styles.progressFill,
-              { width: `${Math.round(xpProgress * 100)}%` },
-            ]}
+            style={[styles.completionFill, { width: `${Math.round(completion * 100)}%` }]}
           />
         </View>
-        <Text style={styles.xpSublabel}>
-          {xpIntoLevel} / {XP_PER_LEVEL} XP to next level
-        </Text>
       </View>
 
-      {/* ── Completion badge ── */}
-      <CompletionBadge discovered={collectionCards.length} total={TOTAL_SPECIES_COUNT} />
+      {/* ── Rarity chips (each shows its rarity-colour dot) ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+        style={styles.chipScroll}
+      >
+        {RARITY_FILTERS.map((value) => (
+          <Chip
+            key={value}
+            label={RARITY_LABELS[value]}
+            selected={value === rarityFilter}
+            onPress={() => setRarityFilter(value)}
+            {...(value !== 'all' ? { dotColor: rarityColors[value] } : {})}
+          />
+        ))}
+      </ScrollView>
 
-      {/* ── Rarity filter chips ── */}
-      <FilterChipBar<RarityFilter>
-        label="Rarity"
-        options={RARITY_FILTERS}
-        selected={rarityFilter}
-        onSelect={setRarityFilter}
-        getLabel={(v) => RARITY_LABELS[v] ?? v}
-        getColor={(v) => (v === 'all' ? colors.accent : (rarityColors[v as Rarity] ?? colors.textMuted))}
-      />
-
-      {/* ── Category filter chips ── */}
-      <FilterChipBar<CategoryFilter>
-        label="Type"
-        options={CATEGORY_FILTERS}
-        selected={categoryFilter}
-        onSelect={setCategoryFilter}
-        getLabel={(v) => CATEGORY_LABELS[v] ?? v}
-        getColor={() => colors.moss}
-      />
-
-      {/* ── Results count ── */}
-      <View style={styles.resultsRow}>
-        <Text style={styles.resultsText}>
-          {filtered.length} card{filtered.length !== 1 ? 's' : ''}
-          {rarityFilter !== 'all' || categoryFilter !== 'all' ? ' (filtered)' : ''}
-        </Text>
-      </View>
+      {/* ── Category chips ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+        style={styles.chipScroll}
+      >
+        {CATEGORY_FILTERS.map((value) => (
+          <Chip
+            key={value}
+            label={CATEGORY_LABELS[value]}
+            selected={value === categoryFilter}
+            onPress={() => setCategoryFilter(value)}
+          />
+        ))}
+      </ScrollView>
 
       {/* ── Card grid ── */}
-      <FlatList<CardRow>
-        data={filtered}
+      <FlatList<GridItem>
+        data={gridData}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         numColumns={2}
-        contentContainerStyle={styles.grid}
+        contentContainerStyle={[styles.grid, gridData.length === 0 && styles.gridEmpty]}
         columnWrapperStyle={styles.columnWrapper}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<EmptyState />}
+        ListEmptyComponent={listEmpty}
         initialNumToRender={10}
         maxToRenderPerBatch={6}
         windowSize={5}
       />
-    </View>
+    </ScreenContainer>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Empty state                                                          */
+/* Grid tile (owned card or locked placeholder) with mount stagger      */
 /* ------------------------------------------------------------------ */
 
-function EmptyState(): React.JSX.Element {
+interface GridTileProps {
+  item: GridItem;
+  index: number;
+  onPressCard: (cardId: string) => void;
+}
+
+function GridTile({ item, index, onPressCard }: GridTileProps): React.JSX.Element {
+  /* Subtle staggered fade-in for the first tiles only (native driver). */
+  const opacity = useRef(new Animated.Value(index < STAGGER_COUNT ? 0 : 1)).current;
+
+  useEffect(() => {
+    if (index < STAGGER_COUNT) {
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: motion.duration.base,
+        delay: index * STAGGER_STEP_MS,
+        easing: motion.easing.decel,
+        useNativeDriver: true,
+      }).start();
+    }
+    // Mount-only animation; index is stable for a given key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (item.kind === 'locked') {
+    return (
+      <Animated.View style={[styles.tile, styles.lockedTile, { opacity }]}>
+        <View style={styles.lockedIcon}>
+          <Ionicons name="help-outline" size={36} color={colors.textPrimary} />
+        </View>
+      </Animated.View>
+    );
+  }
+
+  const { sighting } = item;
+  const isHighTier = sighting.rarity === 'epic' || sighting.rarity === 'legendary';
+
   return (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>🌿</Text>
-      <Text style={styles.emptyTitle}>No cards yet</Text>
-      <Text style={styles.emptyBody}>
-        Go outside and photograph something wild!
-      </Text>
-    </View>
+    <Animated.View style={[styles.tileWrapper, { opacity }]}>
+      <Pressable
+        onPress={() => onPressCard(item.cardId)}
+        accessibilityRole="button"
+        accessibilityLabel={`${sighting.commonName}, ${sighting.rarity}`}
+        style={({ pressed }) => [
+          styles.tile,
+          isHighTier && { borderWidth: 1, borderColor: rarityColors[sighting.rarity] },
+          pressed && styles.tilePressed,
+        ]}
+      >
+        <MockCardImage
+          uri={sighting.publicImageUri}
+          rarity={sighting.rarity}
+          category={sighting.category}
+          name={sighting.commonName}
+        />
+        {/* Bottom scrim keeps the overlay legible over any art. */}
+        <LinearGradient
+          colors={[...scrimGradient]}
+          style={styles.tileScrim}
+          pointerEvents="none"
+        />
+        <View style={styles.tileOverlay} pointerEvents="none">
+          <RarityBadge rarity={sighting.rarity} size="sm" />
+          <Text style={styles.tileName} numberOfLines={1}>
+            {sighting.commonName}
+          </Text>
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -237,100 +371,106 @@ function EmptyState(): React.JSX.Element {
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
 
-const STATUSBAR_HEIGHT =
-  Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 44;
-
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
+  /* ScreenContainer content override: rows manage their own gutters. */
+  content: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
-
-  /* Header */
-  header: {
-    paddingTop: STATUSBAR_HEIGHT + spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
-  },
-  title: {
-    ...typography.display,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  levelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  levelLabel: {
-    ...typography.heading,
+  levelAccessory: {
+    ...typography.caption,
     color: colors.accent,
   },
-  xpLabel: {
-    ...typography.caption,
+
+  /* Completion */
+  completionBlock: {
+    paddingHorizontal: gutter,
+    paddingBottom: spacing.sm,
+  },
+  completionText: {
+    ...typography.footnote,
     color: colors.textSecondary,
+    marginBottom: spacing.xs + 2,
   },
-  progressTrack: {
-    height: 6,
-    backgroundColor: colors.border,
+  completionTrack: {
+    height: 3,
     borderRadius: radius.pill,
+    backgroundColor: colors.surfaceHigh,
     overflow: 'hidden',
-    marginBottom: spacing.xs,
   },
-  progressFill: {
+  completionFill: {
     height: '100%',
-    backgroundColor: colors.accent,
     borderRadius: radius.pill,
-  },
-  xpSublabel: {
-    ...typography.label,
-    color: colors.textMuted,
+    backgroundColor: colors.accent,
   },
 
-  /* Results row */
-  resultsRow: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  /* Filter chips */
+  chipScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.sm,
   },
-  resultsText: {
-    ...typography.label,
-    color: colors.textMuted,
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm - 2,
+    paddingHorizontal: gutter,
   },
 
   /* Grid */
   grid: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: gutter,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xxl,
   },
+  gridEmpty: {
+    flexGrow: 1,
+  },
   columnWrapper: {
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
+  },
+  tileWrapper: {
+    flex: 1,
+    maxWidth: '50%',
+  },
+  tile: {
+    flex: 1,
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  tilePressed: {
+    opacity: 0.85,
+  },
+  tileScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '45%',
+  },
+  tileOverlay: {
+    position: 'absolute',
+    left: spacing.sm + 2,
+    right: spacing.sm + 2,
+    bottom: spacing.sm + 2,
+    gap: spacing.xs,
+  },
+  tileName: {
+    ...typography.subheadline,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 
-  /* Empty state */
-  emptyContainer: {
+  /* Locked placeholder */
+  lockedTile: {
+    maxWidth: '50%',
+    backgroundColor: colors.surfaceElevated,
     alignItems: 'center',
-    paddingTop: spacing.xxl * 2,
-    paddingHorizontal: spacing.xl,
+    justifyContent: 'center',
   },
-  emptyIcon: {
-    fontSize: 56,
-    marginBottom: spacing.md,
-  },
-  emptyTitle: {
-    ...typography.heading,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  emptyBody: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: 'center',
+  lockedIcon: {
+    opacity: 0.25,
   },
 });
