@@ -1,12 +1,17 @@
 /**
  * ResultScreen — displays an already-created sighting record.
  *
- * Flow:
- *   1. Receives `sightingId` from route params (a real store id, NOT an image URI).
- *   2. Looks up Sighting + CollectionCard synchronously from useLifeDexStore.
- *   3. Reveals the collectible card with a 3-D flip animation + shimmer pass.
- *   4. Counts up XP.
- *   5. "View Collection" navigates to the collection tab (record is already persisted).
+ * The post-capture card reveal — the emotional peak of LifeDex. Layered so the
+ * card is the star:
+ *
+ *   1. Opens on a near-black scrim; the card BACK idles with a subtle float.
+ *   2. The card flips (overshoot easing). At flip completion a success haptic
+ *      fires — a heavier beat for epic/legendary.
+ *   3. Only THEN does the rest stagger in below the card: species name,
+ *      scientific name, status badges, XP banner, description, actions.
+ *   4. The XP banner counts up with a rarity-colour hairline filling in sync.
+ *   5. Epic/legendary get a soft radial glow behind the card and a diagonal
+ *      shimmer sweep across the face.
  *
  * HARD RULES enforced:
  *   - The pipeline is NEVER called here. This screen is display-only.
@@ -24,24 +29,35 @@ import React, {
 import {
   Animated,
   Easing,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
   StatusBar,
   Platform,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '@/navigation/types';
 import type { CardMetadata, Sighting } from '@/domain/types';
 import { env } from '@/config/env';
+import { Button } from '@/components/Button';
+import { EmptyState } from '@/components/EmptyState';
 import { MockCardImage } from '@/components/MockCardImage';
+import { RarityBadge } from '@/components/RarityBadge';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
+import { haptics } from '@/utils/haptics';
 import {
   colors,
+  elevation,
+  motion,
+  numeric,
   rarityColors,
+  rarityTints,
   spacing,
   radius,
   typography,
@@ -54,22 +70,34 @@ import type { Rarity, Category, CaptiveStatus } from '@/domain/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
 
+/** Mutable copy of the tabular-nums helper (RN TextStyle wants a mutable array). */
+const tabularNums = { fontVariant: [...numeric.fontVariant] };
+
 /** Pixel dimensions for the card — portrait trading-card ratio. */
 const CARD_WIDTH = 280;
 const CARD_HEIGHT = 400;
 
 /** Duration of the flip-in animation (ms). */
-const FLIP_DURATION = 700;
+const FLIP_DURATION = motion.duration.reveal;
 
 /** XP count-up duration (ms). */
 const XP_COUNT_DURATION = 1400;
 
-const CATEGORY_ICONS: Record<Category, string> = {
-  animal: '🐾',
-  plant: '🌿',
-  tree: '🌳',
-  mushroom: '🍄',
-  unknown: '❓',
+/** Idle-float full cycle duration (ms). */
+const FLOAT_CYCLE = 2200;
+
+/** Delay between staggered reveal items (ms). */
+const STAGGER_DELAY = 90;
+
+/** Width of the XP progress hairline. */
+const XP_TRACK_WIDTH = 180;
+
+const CATEGORY_ICONS: Record<Category, keyof typeof Ionicons.glyphMap> = {
+  animal: 'paw-outline',
+  plant: 'flower-outline',
+  tree: 'leaf-outline',
+  mushroom: 'umbrella-outline',
+  unknown: 'help-circle-outline',
 };
 
 const CAPTIVE_LABELS: Record<CaptiveStatus, string | null> = {
@@ -77,15 +105,6 @@ const CAPTIVE_LABELS: Record<CaptiveStatus, string | null> = {
   domestic: 'Domestic',
   zoo_captive: 'Zoo / Captive',
   unknown: null,
-};
-
-/** Rarity display names for the badge. */
-const RARITY_LABELS: Record<Rarity, string> = {
-  common: 'Common',
-  uncommon: 'Uncommon',
-  rare: 'Rare',
-  epic: 'Epic',
-  legendary: 'Legendary',
 };
 
 /* ------------------------------------------------------------------ */
@@ -123,25 +142,160 @@ function useXpCountUp(target: number, duration: number, active: boolean): number
 }
 
 /* ------------------------------------------------------------------ */
-/* Sub-components                                                      */
+/* Reveal — staggered fade + rise wrapper                              */
 /* ------------------------------------------------------------------ */
 
-/** Shimmering overlay that sweeps across the card face once. */
-function CardShimmer({ active }: { active: boolean }) {
-  const shimmerX = useRef(new Animated.Value(-CARD_WIDTH)).current;
+interface RevealProps {
+  anim: Animated.Value;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}
+
+/** Fades in + rises 12→0 as `anim` goes 0→1. Content stays mounted. */
+function Reveal({ anim, style, children }: RevealProps): React.JSX.Element {
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: anim,
+          transform: [
+            {
+              translateY: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [12, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Idle float — subtle vertical drift while the card back waits        */
+/* ------------------------------------------------------------------ */
+
+function IdleFloat({
+  settled,
+  children,
+}: {
+  settled: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const float = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    const sine = Easing.inOut(Easing.sin);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, {
+          toValue: -4,
+          duration: FLOAT_CYCLE / 4,
+          easing: sine,
+          useNativeDriver: true,
+        }),
+        Animated.timing(float, {
+          toValue: 4,
+          duration: FLOAT_CYCLE / 2,
+          easing: sine,
+          useNativeDriver: true,
+        }),
+        Animated.timing(float, {
+          toValue: 0,
+          duration: FLOAT_CYCLE / 4,
+          easing: sine,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loopRef.current = loop;
+    loop.start();
+    return () => loop.stop();
+  }, [float]);
+
+  // Once the reveal completes, glide back to rest so the card sits still.
+  useEffect(() => {
+    if (!settled) return;
+    loopRef.current?.stop();
+    Animated.timing(float, {
+      toValue: 0,
+      duration: motion.duration.base,
+      easing: motion.easing.standard,
+      useNativeDriver: true,
+    }).start();
+  }, [settled, float]);
+
+  return (
+    <Animated.View style={{ transform: [{ translateY: float }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Rarity glow — two stacked tint layers behind epic/legendary cards   */
+/* ------------------------------------------------------------------ */
+
+function RarityGlow({
+  rarity,
+  visible,
+}: {
+  rarity: Rarity;
+  visible: boolean;
+}): React.JSX.Element | null {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const isHighTier = rarity === 'epic' || rarity === 'legendary';
+
+  useEffect(() => {
+    if (!visible || !isHighTier) return;
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: motion.duration.slow * 2,
+      easing: motion.easing.decel,
+      useNativeDriver: true,
+    }).start();
+  }, [visible, isHighTier, opacity]);
+
+  if (!isHighTier) return null;
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.glowWrap, { opacity }]}>
+      <View style={[styles.glowOuter, { backgroundColor: rarityTints[rarity] }]} />
+      <View style={[styles.glowInner, { backgroundColor: rarityTints[rarity] }]} />
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Card shimmer — diagonal gradient sweep across the revealed face     */
+/* ------------------------------------------------------------------ */
+
+/** Diagonal light sweep that crosses the card face once after the flip. */
+function CardShimmer({ active }: { active: boolean }): React.JSX.Element {
+  const sweep = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!active) return;
     const delay = setTimeout(() => {
-      Animated.timing(shimmerX, {
-        toValue: CARD_WIDTH * 2,
+      Animated.timing(sweep, {
+        toValue: 1,
         duration: 900,
-        easing: Easing.out(Easing.quad),
+        easing: motion.easing.decel,
         useNativeDriver: true,
       }).start();
     }, FLIP_DURATION + 100);
     return () => clearTimeout(delay);
-  }, [active, shimmerX]);
+  }, [active, sweep]);
+
+  const translateX = sweep.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-CARD_WIDTH, CARD_WIDTH * 2],
+  });
 
   return (
     <Animated.View
@@ -149,11 +303,26 @@ function CardShimmer({ active }: { active: boolean }) {
       style={[
         StyleSheet.absoluteFillObject,
         styles.shimmer,
-        { transform: [{ translateX: shimmerX }] },
+        { transform: [{ translateX }, { skewX: '-15deg' }] },
       ]}
-    />
+    >
+      <LinearGradient
+        colors={[
+          `${colors.textPrimary}00`,
+          `${colors.textPrimary}1F`,
+          `${colors.textPrimary}00`,
+        ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+    </Animated.View>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Card faces                                                          */
+/* ------------------------------------------------------------------ */
 
 interface CardFaceProps {
   card: CardMetadata;
@@ -162,9 +331,8 @@ interface CardFaceProps {
 }
 
 /** The visible face of the collectible card. */
-function CardFace({ card, imageUri, flipped }: CardFaceProps) {
+function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element {
   const rarityColor = rarityColors[card.rarity];
-  const categoryIcon = CATEGORY_ICONS[card.category] ?? '❓';
 
   return (
     <View style={[styles.cardFace, { borderColor: rarityColor }]}>
@@ -178,7 +346,7 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps) {
           name={card.name}
         />
         {/* Subtle rarity glow strip at bottom of image */}
-        <View style={[styles.cardImageGlow, { backgroundColor: rarityColor + '40' }]} />
+        <View style={[styles.cardImageGlow, { backgroundColor: rarityTints[card.rarity] }]} />
       </View>
 
       {/* Card info panel */}
@@ -188,17 +356,20 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps) {
           <Text style={styles.cardName} numberOfLines={1}>
             {card.name}
           </Text>
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColor + '22', borderColor: rarityColor }]}>
-            <Text style={[styles.rarityBadgeText, { color: rarityColor }]}>
-              {RARITY_LABELS[card.rarity]}
-            </Text>
-          </View>
+          <RarityBadge rarity={card.rarity} size="sm" />
         </View>
 
         {/* Category line */}
-        <Text style={styles.cardCategory}>
-          {categoryIcon} {card.category.charAt(0).toUpperCase() + card.category.slice(1)}
-        </Text>
+        <View style={styles.cardCategoryRow}>
+          <Ionicons
+            name={CATEGORY_ICONS[card.category] ?? 'help-circle-outline'}
+            size={13}
+            color={colors.textSecondary}
+          />
+          <Text style={styles.cardCategory}>
+            {card.category.charAt(0).toUpperCase() + card.category.slice(1)}
+          </Text>
+        </View>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
@@ -216,15 +387,22 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps) {
   );
 }
 
-/** Rotating card back face. */
-function CardBack() {
+/** Card back — shown while the reveal waits. */
+function CardBack(): React.JSX.Element {
   return (
     <View style={[styles.cardFace, styles.cardBack]}>
+      <View style={styles.cardBackEmblem}>
+        <Ionicons name="leaf-outline" size={36} color={colors.accent} />
+      </View>
       <Text style={styles.cardBackLogo}>LifeDex</Text>
       <Text style={styles.cardBackSub}>Nature Collected</Text>
     </View>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Flip card                                                           */
+/* ------------------------------------------------------------------ */
 
 interface FlipCardProps {
   card: CardMetadata;
@@ -233,22 +411,22 @@ interface FlipCardProps {
 }
 
 /** Flip-in animation container — starts showing back, flips to reveal face. */
-function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps) {
+function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.Element {
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [showFront, setShowFront] = useState(false);
 
   useEffect(() => {
-    // Brief delay so the screen content settles first
+    // Hold on the floating card back for a beat before the flip.
     const t = setTimeout(() => {
       Animated.timing(flipAnim, {
         toValue: 180,
         duration: FLIP_DURATION,
-        easing: Easing.out(Easing.back(1.4)),
+        easing: motion.easing.overshoot,
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) onFlipComplete();
       });
-    }, 300);
+    }, 900);
     return () => clearTimeout(t);
   }, [flipAnim, onFlipComplete]);
 
@@ -302,47 +480,67 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Captive / status badge row                                         */
+/* Status pills                                                        */
 /* ------------------------------------------------------------------ */
 
-function StatusBadges({ sighting }: { sighting: Sighting }) {
+function StatusPill({
+  icon,
+  label,
+  color,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+}): React.JSX.Element {
+  return (
+    <View style={[styles.pill, { backgroundColor: `${color}1F`, borderColor: `${color}55` }]}>
+      <Ionicons name={icon} size={12} color={color} />
+      <Text style={[styles.pillText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+function StatusBadges({
+  sighting,
+  rarity,
+}: {
+  sighting: Sighting;
+  rarity: Rarity;
+}): React.JSX.Element {
   const captiveLabel = CAPTIVE_LABELS[sighting.captiveStatus];
 
   return (
     <View style={styles.badgeRow}>
+      {/* Rarity */}
+      <RarityBadge rarity={rarity} />
+
       {/* Wild / Domestic / Zoo badge */}
       {captiveLabel !== null ? (
-        <View style={[styles.badge, { backgroundColor: colors.warning + '22', borderColor: colors.warning }]}>
-          <Text style={[styles.badgeText, { color: colors.warning }]}>{captiveLabel}</Text>
-        </View>
+        <StatusPill icon="paw-outline" label={captiveLabel} color={colors.warning} />
       ) : (
-        <View style={[styles.badge, { backgroundColor: colors.success + '22', borderColor: colors.success }]}>
-          <Text style={[styles.badgeText, { color: colors.success }]}>Wild</Text>
-        </View>
+        <StatusPill icon="paw-outline" label="Wild" color={colors.success} />
       )}
 
       {/* Sensitivity badge */}
       {(sighting.sensitivity === 'sensitive' || sighting.sensitivity === 'protected') && (
-        <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger }]}>
-          <Text style={[styles.badgeText, { color: colors.danger }]}>
-            {sighting.sensitivity === 'protected' ? 'Protected Species' : 'Sensitive'}
-          </Text>
-        </View>
+        <StatusPill
+          icon="shield-outline"
+          label={sighting.sensitivity === 'protected' ? 'Protected Species' : 'Sensitive'}
+          color={colors.danger}
+        />
       )}
 
       {/* Moderation blocked badge */}
       {!sighting.moderation.allowed && (
-        <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger }]}>
-          <Text style={[styles.badgeText, { color: colors.danger }]}>Blocked</Text>
-        </View>
+        <StatusPill icon="alert-circle-outline" label="Blocked" color={colors.danger} />
       )}
 
       {/* Confidence */}
-      <View style={[styles.badge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-        <Text style={[styles.badgeText, { color: colors.textSecondary }]}>
-          {Math.round(sighting.confidence * 100)}% match
-        </Text>
-      </View>
+      <StatusPill
+        icon="analytics-outline"
+        label={`${Math.round(sighting.confidence * 100)}% match`}
+        color={colors.textSecondary}
+      />
     </View>
   );
 }
@@ -351,13 +549,12 @@ function StatusBadges({ sighting }: { sighting: Sighting }) {
 /* Location note                                                       */
 /* ------------------------------------------------------------------ */
 
-function LocationNote({ sighting }: { sighting: Sighting }) {
+function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element | null {
   if (sighting.publicLocation.hidden) {
     return (
       <View style={styles.locationNote}>
-        <Text style={[styles.badgeText, { color: colors.textMuted }]}>
-          📍 Location hidden (protected species)
-        </Text>
+        <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />
+        <Text style={styles.locationNoteText}>Location hidden (protected species)</Text>
       </View>
     );
   }
@@ -365,9 +562,8 @@ function LocationNote({ sighting }: { sighting: Sighting }) {
   if (sighting.publicLocation.precisionMeters > 0) {
     return (
       <View style={styles.locationNote}>
-        <Text style={[styles.badgeText, { color: colors.textMuted }]}>
-          📍 Location fuzzed to ~{precisionKm} km
-        </Text>
+        <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+        <Text style={styles.locationNoteText}>Location fuzzed to ~{precisionKm} km</Text>
       </View>
     );
   }
@@ -378,11 +574,14 @@ function LocationNote({ sighting }: { sighting: Sighting }) {
 /* Safety notes                                                        */
 /* ------------------------------------------------------------------ */
 
-function SafetyNotes({ notes }: { notes: string[] }) {
+function SafetyNotes({ notes }: { notes: string[] }): React.JSX.Element | null {
   if (notes.length === 0) return null;
   return (
     <View style={styles.safetyBox}>
-      <Text style={styles.safetyTitle}>Conservation Notice</Text>
+      <View style={styles.safetyTitleRow}>
+        <Ionicons name="shield-outline" size={13} color={colors.danger} />
+        <Text style={styles.safetyTitle}>Conservation Notice</Text>
+      </View>
       {notes.map((note, i) => (
         <Text key={i} style={styles.safetyNote}>
           {'• '}{note}
@@ -393,30 +592,55 @@ function SafetyNotes({ notes }: { notes: string[] }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* XP Banner                                                          */
+/* XP Banner                                                           */
 /* ------------------------------------------------------------------ */
 
 function XpBanner({
   xp,
   rarity,
-  scoreReason,
   countActive,
 }: {
   xp: number;
   rarity: Rarity;
-  scoreReason: string;
   countActive: boolean;
-}) {
+}): React.JSX.Element {
   const displayed = useXpCountUp(xp, XP_COUNT_DURATION, countActive);
+  const progress = useRef(new Animated.Value(0)).current;
   const rarityColor = rarityColors[rarity];
+
+  // Hairline fills in sync with the count-up (same duration + ease-out cubic).
+  useEffect(() => {
+    if (!countActive || xp === 0) return;
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: XP_COUNT_DURATION,
+      easing: motion.easing.decel,
+      useNativeDriver: true,
+    }).start();
+  }, [countActive, xp, progress]);
+
+  const fillTranslate = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-XP_TRACK_WIDTH / 2, 0],
+  });
 
   return (
     <View style={styles.xpSection}>
       <View style={styles.xpBanner}>
-        <Text style={[styles.xpValue, { color: rarityColor }]}>+{displayed}</Text>
+        <Text style={[styles.xpValue, tabularNums, { color: rarityColor }]}>+{displayed}</Text>
         <Text style={styles.xpLabel}>XP</Text>
       </View>
-      <Text style={styles.scoreReason}>{scoreReason}</Text>
+      <View style={styles.xpTrack}>
+        <Animated.View
+          style={[
+            styles.xpFill,
+            {
+              backgroundColor: rarityColor,
+              transform: [{ translateX: fillTranslate }, { scaleX: progress }],
+            },
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -427,7 +651,10 @@ function XpBanner({
 
 type Phase = 'flipping' | 'revealed';
 
-export default function ResultScreen({ route, navigation }: Props) {
+/** Number of staggered reveal groups below the card. */
+const REVEAL_GROUPS = 6;
+
+export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
   const { sightingId } = route.params;
 
   // Synchronous store lookup — no async, no pipeline.
@@ -438,12 +665,45 @@ export default function ResultScreen({ route, navigation }: Props) {
   const cardId = `card-${sightingId}`;
   const collectionCard = getCardById(cardId);
 
+  // Rarity resolved before hooks so the flip-completion haptic can use it.
+  const rarity: Rarity =
+    collectionCard?.rarity ?? sighting?.rarity ?? 'common';
+
   // Animation phase — starts at 'flipping', transitions to 'revealed' after flip.
   const [phase, setPhase] = useState<Phase>('flipping');
+  const isRevealed = phase === 'revealed';
+
+  // One Animated.Value per staggered reveal group (name, scientific, badges,
+  // XP, description, actions).
+  const revealAnims = useRef(
+    Array.from({ length: REVEAL_GROUPS }, () => new Animated.Value(0)),
+  ).current;
 
   const handleFlipComplete = useCallback(() => {
+    // Heavier beat for the top tiers; standard success otherwise.
+    if (rarity === 'epic' || rarity === 'legendary') {
+      haptics.rare();
+    } else {
+      haptics.success();
+    }
     setPhase('revealed');
-  }, []);
+  }, [rarity]);
+
+  // Stagger the content in only AFTER the flip lands.
+  useEffect(() => {
+    if (!isRevealed) return;
+    Animated.stagger(
+      STAGGER_DELAY,
+      revealAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: motion.duration.slow,
+          easing: motion.easing.decel,
+          useNativeDriver: true,
+        }),
+      ),
+    ).start();
+  }, [isRevealed, revealAnims]);
 
   const handleGoCollection = useCallback(() => {
     navigation.navigate('Tabs', { screen: 'Collection' });
@@ -456,16 +716,15 @@ export default function ResultScreen({ route, navigation }: Props) {
   /* ---- Render: record not found ---- */
   if (sighting === undefined) {
     return (
-      <View style={styles.centeredFill}>
+      <View style={styles.root}>
         <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-        <Text style={styles.errorIcon}>⚠</Text>
-        <Text style={styles.errorTitle}>Sighting Not Found</Text>
-        <Text style={styles.errorMessage}>
-          This sighting record could not be loaded. It may not have been saved yet.
-        </Text>
-        <Pressable style={styles.primaryButton} onPress={handleRetry}>
-          <Text style={styles.primaryButtonText}>Go Back</Text>
-        </Pressable>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Sighting Not Found"
+          message="This sighting record could not be loaded. It may not have been saved yet."
+          actionTitle="Go Back"
+          onAction={handleRetry}
+        />
       </View>
     );
   }
@@ -474,105 +733,91 @@ export default function ResultScreen({ route, navigation }: Props) {
   // Fall back to collectionCard if available (same data, either works).
   const card = collectionCard?.card ?? sighting.card;
   const publicImageUri = collectionCard?.publicImageUri ?? sighting.publicImageUri;
-  const rarity = collectionCard?.rarity ?? sighting.rarity;
-  const rarityColor = rarityColors[rarity];
-  const isRevealed = phase === 'revealed';
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-
-      {/* Rarity glow backdrop */}
-      <View
-        style={[
-          styles.glowBackdrop,
-          { backgroundColor: isRevealed ? rarityColor + '18' : 'transparent' },
-        ]}
-        pointerEvents="none"
-      />
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ---- Species name ---- */}
-        <Text style={styles.speciesName}>{sighting.commonName}</Text>
-        {sighting.scientificName !== undefined && (
-          <Text style={styles.scientificName}>{sighting.scientificName}</Text>
-        )}
-
-        {/* ---- Mock recognition notice ---- */}
-        {env.isMockAi && (
-          <View style={styles.mockBanner}>
-            <Text style={styles.mockBannerText}>
-              🧪 Mock Detection — real AI recognition not connected yet
-            </Text>
-          </View>
-        )}
-
-        {/* ---- Status badges ---- */}
-        <StatusBadges sighting={sighting} />
-
-        {/* ---- Location note ---- */}
-        <LocationNote sighting={sighting} />
-
-        {/* ---- Card flip ---- */}
+        {/* ---- The card — the star of the screen ---- */}
         <View style={styles.cardWrapper}>
-          <FlipCard
-            card={card}
-            imageUri={publicImageUri}
-            onFlipComplete={handleFlipComplete}
-          />
+          <RarityGlow rarity={rarity} visible={isRevealed} />
+          <IdleFloat settled={isRevealed}>
+            <FlipCard
+              card={card}
+              imageUri={publicImageUri}
+              onFlipComplete={handleFlipComplete}
+            />
+          </IdleFloat>
         </View>
 
-        {/* ---- XP Banner (fades in after reveal) ---- */}
-        <Animated.View style={[{ opacity: isRevealed ? 1 : 0 }]}>
-          <XpBanner
-            xp={sighting.xp}
-            rarity={rarity}
-            scoreReason={card.description}
-            countActive={isRevealed}
-          />
-        </Animated.View>
+        {/* ---- Species name (revealed after the flip) ---- */}
+        <Reveal anim={revealAnims[0]!}>
+          <Text style={styles.speciesName}>{sighting.commonName}</Text>
+        </Reveal>
+        <Reveal anim={revealAnims[1]!}>
+          {sighting.scientificName !== undefined ? (
+            <Text style={styles.scientificName}>{sighting.scientificName}</Text>
+          ) : (
+            <View />
+          )}
+        </Reveal>
 
-        {/* ---- Safety notes (if any) ---- */}
-        {isRevealed && card.safetyNotes !== undefined && card.safetyNotes.length > 0 && (
-          <SafetyNotes notes={card.safetyNotes} />
-        )}
+        {/* ---- Status badges + location + mock notice ---- */}
+        <Reveal anim={revealAnims[2]!} style={styles.fullWidth}>
+          <StatusBadges sighting={sighting} rarity={rarity} />
+          <LocationNote sighting={sighting} />
+          {env.isMockAi && (
+            <View style={styles.mockBanner}>
+              <Ionicons name="flask-outline" size={12} color={colors.warning} />
+              <Text style={styles.mockBannerText}>
+                Mock Detection — real AI recognition not connected yet
+              </Text>
+            </View>
+          )}
+        </Reveal>
 
-        {/* ---- Card description ---- */}
-        {isRevealed && (
+        {/* ---- XP Banner with synced hairline ---- */}
+        <Reveal anim={revealAnims[3]!}>
+          <XpBanner xp={sighting.xp} rarity={rarity} countActive={isRevealed} />
+        </Reveal>
+
+        {/* ---- Safety notes + card description ---- */}
+        <Reveal anim={revealAnims[4]!} style={styles.fullWidth}>
+          {card.safetyNotes !== undefined && card.safetyNotes.length > 0 && (
+            <SafetyNotes notes={card.safetyNotes} />
+          )}
           <View style={styles.descriptionBox}>
             <Text style={styles.descriptionText}>{card.description}</Text>
           </View>
-        )}
+        </Reveal>
 
         {/* ---- Action buttons ---- */}
-        {isRevealed && (
-          <View style={styles.actions}>
+        <Reveal anim={revealAnims[5]!} style={styles.fullWidth}>
+          <View style={styles.actions} pointerEvents={isRevealed ? 'auto' : 'none'}>
             {/* Record is already persisted by the pipeline — go straight to collection. */}
-            <Pressable
-              style={[styles.primaryButton, styles.savedButton]}
+            <Button
+              title="View Collection"
               onPress={handleGoCollection}
-              accessibilityRole="button"
-              accessibilityLabel="View collection"
-            >
-              <Text style={[styles.primaryButtonText, { color: colors.success }]}>
-                View Collection →
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.secondaryButton}
+              variant="primary"
+              size="lg"
+              icon="albums-outline"
+              fullWidth
+            />
+            <Button
+              title="Capture Another"
               onPress={handleRetry}
-              accessibilityRole="button"
-              accessibilityLabel="Capture another"
-            >
-              <Text style={styles.secondaryButtonText}>Capture Another</Text>
-            </Pressable>
+              variant="ghost"
+              size="lg"
+              icon="camera-outline"
+              fullWidth
+            />
           </View>
-        )}
+        </Reveal>
 
         {/* Bottom padding */}
         <View style={{ height: spacing.xxl }} />
@@ -590,101 +835,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  glowBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
   scroll: {
     flex: 1,
-    zIndex: 1,
   },
   scrollContent: {
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? spacing.xxl + spacing.md : spacing.xl,
     paddingHorizontal: spacing.md,
   },
-
-  /* ---- Error / empty ---- */
-  centeredFill: {
-    flex: 1,
-    backgroundColor: colors.background,
+  fullWidth: {
+    width: '100%',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  errorIcon: {
-    fontSize: 48,
-    color: colors.danger,
-    marginBottom: spacing.sm,
-  },
-  errorTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  errorMessage: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
-  },
-
-  /* ---- Species header ---- */
-  speciesName: {
-    ...typography.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  scientificName: {
-    ...typography.body,
-    color: colors.textMuted,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-
-  /* ---- Status badges ---- */
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  badge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  badgeText: {
-    ...typography.label,
-    letterSpacing: 0.5,
-  },
-
-  /* ---- Mock recognition banner ---- */
-  mockBanner: {
-    alignSelf: 'center',
-    backgroundColor: colors.warning + '1A',
-    borderWidth: 1,
-    borderColor: colors.warning + '55',
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  mockBannerText: {
-    ...typography.label,
-    color: colors.warning,
-    letterSpacing: 0.3,
-    textAlign: 'center',
-  },
-
-  /* ---- Location note ---- */
-  locationNote: {
-    marginBottom: spacing.xl,
   },
 
   /* ---- Card flip container ---- */
@@ -698,6 +859,25 @@ const styles = StyleSheet.create({
     height: CARD_HEIGHT,
   },
 
+  /* ---- Rarity glow (epic/legendary) ---- */
+  glowWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glowOuter: {
+    position: 'absolute',
+    width: CARD_WIDTH + 160,
+    height: CARD_HEIGHT + 120,
+    borderRadius: radius.pill,
+  },
+  glowInner: {
+    position: 'absolute',
+    width: CARD_WIDTH + 72,
+    height: CARD_HEIGHT + 40,
+    borderRadius: radius.pill,
+  },
+
   /* ---- Card face ---- */
   cardFace: {
     width: CARD_WIDTH,
@@ -706,13 +886,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     backgroundColor: colors.surface,
     overflow: 'hidden',
-    // Elevation for Android
-    elevation: 12,
-    // Shadow for iOS
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
+    ...elevation.level3,
   },
   cardBack: {
     backgroundColor: colors.surfaceElevated,
@@ -721,15 +895,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
   },
+  cardBackEmblem: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
   cardBackLogo: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.teal,
+    ...typography.title1,
+    color: colors.accent,
     letterSpacing: 2,
   },
   cardBackSub: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textTertiary,
     letterSpacing: 3,
     textTransform: 'uppercase',
   },
@@ -740,16 +924,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-  },
-  cardImagePlaceholderIcon: {
-    fontSize: 72,
-    marginBottom: spacing.xs,
-  },
-  cardImagePlaceholderLabel: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
   },
   cardImageGlow: {
     position: 'absolute',
@@ -773,19 +947,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cardName: {
-    ...typography.heading,
+    ...typography.headline,
     color: colors.textPrimary,
     flex: 1,
   },
-  rarityBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-  },
-  rarityBadgeText: {
-    ...typography.label,
-    letterSpacing: 0.4,
+  cardCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   cardCategory: {
     ...typography.caption,
@@ -804,24 +973,93 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   statKey: {
+    ...typography.label,
     fontSize: 10,
-    color: colors.textMuted,
+    lineHeight: 12,
+    color: colors.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
 
   /* ---- Shimmer ---- */
   shimmer: {
-    width: CARD_WIDTH * 0.4,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    transform: [{ skewX: '-15deg' }],
+    width: CARD_WIDTH * 0.45,
+  },
+
+  /* ---- Species header (below the card, post-reveal) ---- */
+  speciesName: {
+    ...typography.largeTitle,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  scientificName: {
+    ...typography.callout,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+
+  /* ---- Status badges ---- */
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  pillText: {
+    ...typography.label,
+  },
+
+  /* ---- Location note ---- */
+  locationNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  locationNoteText: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+
+  /* ---- Mock recognition banner ---- */
+  mockBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: spacing.xs,
+    backgroundColor: `${colors.warning}1A`,
+    borderWidth: 1,
+    borderColor: `${colors.warning}55`,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  mockBannerText: {
+    ...typography.label,
+    color: colors.warning,
   },
 
   /* ---- XP section ---- */
   xpSection: {
     alignItems: 'center',
+    marginTop: spacing.md,
     marginBottom: spacing.xl,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   xpBanner: {
     flexDirection: 'row',
@@ -830,41 +1068,50 @@ const styles = StyleSheet.create({
   },
   xpValue: {
     fontSize: 56,
-    fontWeight: '900',
+    fontWeight: '800',
     lineHeight: 64,
+    letterSpacing: -0.4,
   },
   xpLabel: {
-    ...typography.title,
+    ...typography.title2,
     color: colors.textSecondary,
   },
-  scoreReason: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
+  xpTrack: {
+    width: XP_TRACK_WIDTH,
+    height: 1,
+    backgroundColor: colors.separator,
+    overflow: 'hidden',
+  },
+  xpFill: {
+    width: XP_TRACK_WIDTH,
+    height: 1,
   },
 
   /* ---- Safety notes ---- */
   safetyBox: {
     width: '100%',
-    backgroundColor: colors.danger + '12',
+    backgroundColor: `${colors.danger}12`,
     borderWidth: 1,
-    borderColor: colors.danger + '44',
+    borderColor: `${colors.danger}44`,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.lg,
     gap: spacing.xs,
   },
+  safetyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
   safetyTitle: {
     ...typography.label,
     color: colors.danger,
-    letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom: spacing.xs,
   },
   safetyNote: {
-    ...typography.caption,
+    ...typography.footnote,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
 
   /* ---- Description ---- */
@@ -876,39 +1123,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
   },
 
   /* ---- Actions ---- */
   actions: {
     width: '100%',
-    gap: spacing.md,
-  },
-  primaryButton: {
-    width: '100%',
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.teal,
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-  },
-  savedButton: {
-    borderColor: colors.success,
-  },
-  primaryButtonText: {
-    ...typography.heading,
-    color: colors.teal,
-  },
-  secondaryButton: {
-    width: '100%',
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  secondaryButtonText: {
-    ...typography.body,
-    color: colors.textMuted,
+    gap: spacing.sm,
   },
 });
