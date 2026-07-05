@@ -10,9 +10,10 @@
  */
 import React, { useMemo } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import type { Category, Rarity } from '@/domain/types';
-import { colors, rarityColors } from '@/theme/theme';
+import { colors, rarityColors, rarityTints, scrimGradient } from '@/theme/theme';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -57,12 +58,20 @@ export function MockCardImage({ uri, rarity, category, name }: Props): React.JSX
 
   if (!isMock) {
     return (
-      <Image
-        source={{ uri }}
-        style={styles.realImage}
-        resizeMode="cover"
-        accessibilityLabel={`Card art for ${name}`}
-      />
+      <View style={styles.realWrapper}>
+        <Image
+          source={{ uri }}
+          style={styles.realImage}
+          resizeMode="cover"
+          accessibilityLabel={`Card art for ${name}`}
+        />
+        {/* Bottom scrim so text overlaid on the artwork stays legible. */}
+        <LinearGradient
+          colors={[...scrimGradient]}
+          style={styles.scrim}
+          pointerEvents="none"
+        />
+      </View>
     );
   }
 
@@ -71,7 +80,7 @@ export function MockCardImage({ uri, rarity, category, name }: Props): React.JSX
   const rarityEmoji = RARITY_EMOJI[rarity] ?? '✦';
 
   return (
-    <View style={styles.placeholder}>
+    <View style={[styles.placeholder, { backgroundColor: rarityTints[rarity] }]}>
       {/* Background gradient simulation via layered views */}
       <View style={[styles.bgLayer, { backgroundColor: rarityColor + '18' }]} />
       <View style={[styles.bgCircle, { backgroundColor: rarityColor + '22' }]} />
@@ -100,9 +109,21 @@ export function MockCardImage({ uri, rarity, category, name }: Props): React.JSX
 /* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
+  realWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
   realImage: {
     width: '100%',
     height: '100%',
+  },
+  scrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '45%',
   },
   placeholder: {
     flex: 1,

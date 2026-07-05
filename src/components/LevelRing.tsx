@@ -5,9 +5,12 @@
  * react-native-svg dynamic import pattern as XPRing.tsx so it degrades
  * gracefully in test environments where SVG is unavailable.
  */
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, typography } from '@/theme/theme';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+import { colors, motion, numeric, typography } from '@/theme/theme';
+
+/** Mutable copy of the theme's tabular-nums helper (TextStyle wants a mutable array). */
+const tabularNums = { fontVariant: [...numeric.fontVariant] };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let Svg: any, Circle: any, Defs: any, LinearGradient: any, Stop: any;
@@ -56,6 +59,30 @@ export function LevelRing({
   const offset = circ * (1 - clamped);
   const cx = size / 2;
 
+  // Animate the arc. strokeDashoffset is not a native-driver style prop, so we
+  // drive a detached native Animated value and forward frames to the SVG circle
+  // via setNativeProps (keeps the "useNativeDriver: true only" rule).
+  const animatedProgress = useRef(new Animated.Value(0)).current;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const arcRef = useRef<any>(null);
+
+  useEffect(() => {
+    const listenerId = animatedProgress.addListener(({ value }) => {
+      arcRef.current?.setNativeProps?.({ strokeDashoffset: circ * (1 - value) });
+    });
+    const anim = Animated.timing(animatedProgress, {
+      toValue: clamped,
+      duration: motion.duration.slow,
+      easing: motion.easing.decel,
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => {
+      anim.stop();
+      animatedProgress.removeListener(listenerId);
+    };
+  }, [animatedProgress, clamped, circ]);
+
   if (Svg && Circle && Defs && LinearGradient && Stop) {
     return (
       <View style={[styles.wrapper, { width: size, height: size }]}>
@@ -84,8 +111,9 @@ export function LevelRing({
             strokeWidth={strokeWidth}
             fill="none"
           />
-          {/* Progress arc */}
+          {/* Progress arc (animated via setNativeProps) */}
           <Circle
+            ref={arcRef}
             cx={cx}
             cy={cx}
             r={r}
@@ -161,6 +189,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 56,
     letterSpacing: -1,
+    ...tabularNums,
   },
   xpRow: {
     flexDirection: 'row',
@@ -169,6 +198,7 @@ const styles = StyleSheet.create({
   },
   xpCurrent: {
     ...typography.caption,
+    ...tabularNums,
     color: colors.teal,
     fontWeight: '700' as const,
   },
@@ -178,6 +208,7 @@ const styles = StyleSheet.create({
   },
   xpTotal: {
     ...typography.caption,
+    ...tabularNums,
     color: colors.textMuted,
   },
   xpUnit: {

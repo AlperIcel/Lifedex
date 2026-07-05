@@ -5,10 +5,13 @@
  * Uses react-native-svg (bundled with Expo) for the arc; falls back gracefully
  * if the package is unavailable (CI/test environments).
  */
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { Rarity } from '@/domain/types';
-import { rarityColors, colors, typography } from '@/theme/theme';
+import { rarityColors, motion, numeric, typography } from '@/theme/theme';
+
+/** Mutable copy of the theme's tabular-nums helper (TextStyle wants a mutable array). */
+const tabularNums = { fontVariant: [...numeric.fontVariant] };
 
 // react-native-svg is an Expo SDK dep — safe to require() so TS doesn't error
 // in environments where the types aren't installed yet.
@@ -44,6 +47,32 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
 
   const labelSize = size < 56 ? 11 : size < 80 ? 14 : 17;
 
+  // Animate the arc. strokeDashoffset is not a native-driver style prop, so we
+  // drive a detached native Animated value and forward frames to the SVG circle
+  // via setNativeProps (keeps the "useNativeDriver: true only" rule).
+  const animatedProgress = useRef(new Animated.Value(0)).current;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const arcRef = useRef<any>(null);
+
+  useEffect(() => {
+    const listenerId = animatedProgress.addListener(({ value }) => {
+      arcRef.current?.setNativeProps?.({
+        strokeDashoffset: circumference * (1 - value),
+      });
+    });
+    const anim = Animated.timing(animatedProgress, {
+      toValue: clampedProgress,
+      duration: motion.duration.slow,
+      easing: motion.easing.decel,
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => {
+      anim.stop();
+      animatedProgress.removeListener(listenerId);
+    };
+  }, [animatedProgress, clampedProgress, circumference]);
+
   if (Svg && Circle) {
     return (
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -57,8 +86,9 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
             strokeWidth={strokeWidth}
             fill="none"
           />
-          {/* Progress arc */}
+          {/* Progress arc (animated via setNativeProps) */}
           <Circle
+            ref={arcRef}
             cx={center}
             cy={center}
             r={radius}
@@ -99,6 +129,7 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
 const styles = StyleSheet.create({
   xpLabel: {
     ...typography.heading,
+    ...tabularNums,
     fontWeight: '800',
     textAlign: 'center',
     includeFontPadding: false,

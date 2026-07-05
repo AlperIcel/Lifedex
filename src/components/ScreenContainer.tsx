@@ -18,7 +18,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, typography } from '@/theme/theme';
+import { colors, gutter, spacing, typography } from '@/theme/theme';
 
 interface Props {
   children: React.ReactNode;
@@ -30,6 +30,10 @@ interface Props {
   contentStyle?: ViewStyle;
   /** Pad the bottom (useful above tab bars). Defaults to true. */
   padBottom?: boolean;
+  /** Render the title as a large header row (typography.largeTitle). */
+  largeTitle?: boolean;
+  /** Optional element on the right of the large-title header row. */
+  rightAccessory?: React.ReactNode;
 }
 
 export function ScreenContainer({
@@ -38,16 +42,28 @@ export function ScreenContainer({
   scrollable = false,
   contentStyle,
   padBottom = true,
+  largeTitle = false,
+  rightAccessory,
 }: Props): React.JSX.Element {
+  const showLargeHeader = largeTitle && (title != null || rightAccessory != null);
+
   const inner = (
     <View style={[styles.content, padBottom && styles.contentPadBottom, contentStyle]}>
-      {title ? <Text style={styles.title}>{title}</Text> : null}
+      {title && !largeTitle ? <Text style={styles.title}>{title}</Text> : null}
       {children}
     </View>
   );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      {showLargeHeader ? (
+        <View style={styles.largeHeader}>
+          <Text style={styles.largeTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          {rightAccessory ? <View style={styles.headerAccessory}>{rightAccessory}</View> : null}
+        </View>
+      ) : null}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -92,5 +108,21 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.textPrimary,
     marginBottom: spacing.md,
+  },
+  largeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: gutter,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  largeTitle: {
+    ...typography.largeTitle,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  headerAccessory: {
+    marginLeft: spacing.sm,
   },
 });

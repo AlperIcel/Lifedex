@@ -1,11 +1,12 @@
 /**
  * RarityBadge — compact pill displaying a rarity tier with its signature colour.
+ * Soft rarity-tint fill + 6px leading dot; epic/legendary get a 1px colour border.
  * Used inside CardView and anywhere a rarity label is needed.
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { Rarity } from '@/domain/types';
-import { rarityColors, spacing, radius, typography } from '@/theme/theme';
+import { rarityColors, rarityTints, spacing, radius, typography } from '@/theme/theme';
 
 const LABELS: Record<Rarity, string> = {
   common: 'COMMON',
@@ -24,15 +25,18 @@ interface Props {
 export function RarityBadge({ rarity, size = 'md' }: Props): React.JSX.Element {
   const color = rarityColors[rarity];
   const isSm = size === 'sm';
+  const bordered = rarity === 'epic' || rarity === 'legendary';
 
   return (
     <View
       style={[
         styles.pill,
         isSm ? styles.pillSm : styles.pillMd,
-        { borderColor: color, backgroundColor: `${color}22` },
+        { backgroundColor: rarityTints[rarity] },
+        bordered && { borderWidth: 1, borderColor: color },
       ]}
     >
+      <View style={[styles.dot, isSm && styles.dotSm, { backgroundColor: color }]} />
       <Text
         style={[
           styles.label,
@@ -49,7 +53,7 @@ export function RarityBadge({ rarity, size = 'md' }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   pill: {
-    borderWidth: 1,
+    flexDirection: 'row',
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
     alignItems: 'center',
@@ -58,10 +62,22 @@ const styles = StyleSheet.create({
   pillMd: {
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.xs - 1,
+    gap: spacing.xs + 1,
   },
   pillSm: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
+    gap: spacing.xs,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotSm: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   label: {
     ...typography.label,
