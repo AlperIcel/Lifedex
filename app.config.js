@@ -18,5 +18,6 @@ module.exports = () => ({
     AI_PROVIDER: process.env.AI_PROVIDER ?? appJson.expo.extra?.AI_PROVIDER ?? 'mock',
     MAPS_PROVIDER: process.env.MAPS_PROVIDER ?? appJson.expo.extra?.MAPS_PROVIDER ?? 'mock',
     GOOGLE_CLOUD_VISION_KEY: process.env.GOOGLE_CLOUD_VISION_KEY ?? '',
+    VISION_PROXY_URL: process.env.VISION_PROXY_URL ?? '',
   },
 });

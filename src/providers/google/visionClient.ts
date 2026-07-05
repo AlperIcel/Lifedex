@@ -11,6 +11,7 @@
  */
 import * as FileSystem from 'expo-file-system';
 
+import { env } from '@/config/env';
 import type { VisionAnnotateResponse } from './visionMapping';
 
 const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
@@ -30,7 +31,9 @@ async function doAnnotate(imageUri: string, apiKey: string): Promise<VisionAnnot
     encoding: FileSystem.EncodingType.Base64,
   });
 
-  const resp = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+  // Prefer the server-side proxy (key stays off-device); else call Google directly.
+  const url = env.visionProxyUrl ?? `${ENDPOINT}?key=${apiKey}`;
+  const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requests: [{ image: { content: base64 }, features: FEATURES }] }),

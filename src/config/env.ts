@@ -17,6 +17,7 @@ const RawEnvSchema = z.object({
   AI_PROVIDER: ProviderSchema.default('mock'),
   MAPS_PROVIDER: ProviderSchema.default('mock'),
   GOOGLE_CLOUD_VISION_KEY: z.string().optional().or(z.literal('')),
+  VISION_PROXY_URL: z.string().optional().or(z.literal('')),
 });
 
 type RawEnv = z.infer<typeof RawEnvSchema>;
@@ -38,6 +39,7 @@ function readRaw(): Record<string, string | undefined> {
     AI_PROVIDER: pick('AI_PROVIDER'),
     MAPS_PROVIDER: pick('MAPS_PROVIDER'),
     GOOGLE_CLOUD_VISION_KEY: pick('GOOGLE_CLOUD_VISION_KEY'),
+    VISION_PROXY_URL: pick('VISION_PROXY_URL'),
   };
 }
 
@@ -69,6 +71,15 @@ export const env = {
   googleVisionKey:
     parsed.GOOGLE_CLOUD_VISION_KEY !== undefined && parsed.GOOGLE_CLOUD_VISION_KEY.length > 0
       ? parsed.GOOGLE_CLOUD_VISION_KEY
+      : undefined,
+  /**
+   * URL of a server-side Vision proxy (Supabase Edge Function). When set, the app
+   * calls the proxy instead of Google directly, so the API key never ships in the
+   * client bundle. Preferred for release.
+   */
+  visionProxyUrl:
+    parsed.VISION_PROXY_URL !== undefined && parsed.VISION_PROXY_URL.length > 0
+      ? parsed.VISION_PROXY_URL
       : undefined,
   isMockAi,
   isMockMaps,

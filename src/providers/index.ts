@@ -66,11 +66,16 @@ export function getProviders(): Providers {
   }
 
   // Real recognition + moderation via Google Cloud Vision (one shared API call
-  // per photo). Only when a key is configured. Card generation stays mock.
-  if (env.aiProvider === 'google' && env.googleVisionKey !== undefined) {
+  // per photo). Enabled when a direct key OR a server-side proxy is configured
+  // (the proxy path keeps the key off-device). Card generation stays mock.
+  if (
+    env.aiProvider === 'google' &&
+    (env.googleVisionKey !== undefined || env.visionProxyUrl !== undefined)
+  ) {
+    const visionKey = env.googleVisionKey ?? '';
     return {
-      vision: new GoogleVisionProvider(env.googleVisionKey),
-      moderation: new GoogleModerationProvider(env.googleVisionKey),
+      vision: new GoogleVisionProvider(visionKey),
+      moderation: new GoogleModerationProvider(visionKey),
       // Free subject-crop card image (no key). Upload to public storage happens
       // in the community layer; premium AI restyle is a later slice.
       cardGen: new CropCardGenProvider(),
