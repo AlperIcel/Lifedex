@@ -24,3 +24,25 @@ jest.mock('expo-image-manipulator', () => ({
   manipulateAsync: jest.fn(async () => ({ uri: 'file:///card.jpg', width: 1024, height: 1024 })),
   SaveFormat: { JPEG: 'jpeg' },
 }));
+
+// Design deps — native/asset modules that need no-op mocks in jest.
+jest.mock('expo-haptics', () => ({
+  selectionAsync: jest.fn(async () => {}),
+  impactAsync: jest.fn(async () => {}),
+  notificationAsync: jest.fn(async () => {}),
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+}));
+
+jest.mock('expo-linear-gradient', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return { LinearGradient: (props) => React.createElement(View, props, props.children) };
+});
+
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  const Icon = (props) => React.createElement(Text, props, props.name);
+  return { Ionicons: Icon, MaterialCommunityIcons: Icon, Feather: Icon };
+});
