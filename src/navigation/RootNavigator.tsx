@@ -218,10 +218,14 @@ function TabNavigator() {
 }
 
 /** Root stack — wraps tabs with full-screen modal routes. */
-export function RootNavigator() {
+export function RootNavigator({
+  initialRouteName = 'Onboarding',
+}: {
+  initialRouteName?: keyof RootStackParamList;
+} = {}) {
   return (
     <Stack.Navigator
-      initialRouteName="Onboarding"
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.background },

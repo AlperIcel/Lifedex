@@ -13,7 +13,8 @@
  */
 
 import 'react-native-gesture-handler';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, type Theme } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import { colors } from './src/theme/theme';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { lifeDexStore } from './src/store/useLifeDexStore';
 import { ensureAnonSession } from './src/lib/community';
+import { isOnboarded } from './src/lib/onboarding';
 
 /**
  * Navigation theme that matches the LifeDex dark-nature palette.
@@ -39,19 +41,28 @@ const NAV_THEME: Theme = {
 };
 
 export default function App(): React.JSX.Element {
-  // Restore persisted captures on startup (seed shows immediately, then merges).
+  // null = still resolving whether onboarding was completed.
+  const [onboarded, setOnboardedState] = useState<boolean | null>(null);
+
   useEffect(() => {
     void lifeDexStore.hydrate();
     // Best-effort anonymous sign-in for the community layer (no-op if disabled).
     void ensureAnonSession();
+    void isOnboarded().then(setOnboardedState);
   }, []);
 
   return (
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor={colors.background} />
-      <NavigationContainer theme={NAV_THEME}>
-        <RootNavigator />
-      </NavigationContainer>
+      {onboarded === null ? (
+        // Brief splash while the onboarding flag resolves (avoids a flash of the
+        // wrong initial route).
+        <View style={{ flex: 1, backgroundColor: colors.background }} />
+      ) : (
+        <NavigationContainer theme={NAV_THEME}>
+          <RootNavigator initialRouteName={onboarded ? 'Tabs' : 'Onboarding'} />
+        </NavigationContainer>
+      )}
     </SafeAreaProvider>
   );
 }

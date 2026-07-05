@@ -21,6 +21,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors, spacing, radius, typography } from '@/theme/theme';
+import { setOnboarded } from '@/lib/onboarding';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -163,18 +164,23 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
+  const finish = useCallback(() => {
+    void setOnboarded();
+    navigation.replace('Tabs', { screen: 'Home' });
+  }, [navigation]);
+
   const handleNext = useCallback(() => {
     const next = activeIndex + 1;
     if (next < STEPS.length) {
       flatRef.current?.scrollToIndex({ index: next, animated: true });
     } else {
-      navigation.replace('Tabs', { screen: 'Home' });
+      finish();
     }
-  }, [activeIndex, navigation]);
+  }, [activeIndex, finish]);
 
   const handleSkip = useCallback(() => {
-    navigation.replace('Tabs', { screen: 'Home' });
-  }, [navigation]);
+    finish();
+  }, [finish]);
 
   const isLast = activeIndex === STEPS.length - 1;
   const activeStep = STEPS[activeIndex] ?? STEPS[0]!;

@@ -44,6 +44,7 @@ import {
   saveUserCaptures,
   type PersistedCapture,
 } from './persistence';
+import { env } from '@/config/env';
 
 /* ------------------------------------------------------------------ */
 /* Public state types                                                  */
@@ -197,9 +198,31 @@ function cardFromSighting(s: Sighting): CollectionCard {
 /* Level math                                                          */
 /* ------------------------------------------------------------------ */
 
-/** Compute player level from cumulative XP (simple quadratic ladder). */
-function xpToLevel(xp: number): number {
-  return Math.max(1, Math.floor(Math.sqrt(xp / 100)) + 1);
+/** Compute player level from cumulative XP (quadratic ladder: level N starts at 100*(N-1)^2). */
+export function xpToLevel(xp: number): number {
+  return Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1);
+}
+
+export interface LevelBounds {
+  level: number;
+  /** Cumulative XP at the start of the current level. */
+  floor: number;
+  /** Cumulative XP at the start of the next level. */
+  ceil: number;
+  /** Progress through the current level, 0..1. */
+  progress: number;
+  /** XP remaining to reach the next level. */
+  toNext: number;
+}
+
+/** Level + progress bounds for a given cumulative XP (single source for UI rings). */
+export function levelBounds(xp: number): LevelBounds {
+  const level = xpToLevel(xp);
+  const floor = 100 * (level - 1) ** 2;
+  const ceil = 100 * level ** 2;
+  const span = ceil - floor;
+  const progress = span > 0 ? Math.min(1, Math.max(0, (xp - floor) / span)) : 0;
+  return { level, floor, ceil, progress, toNext: Math.max(0, ceil - xp) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -208,9 +231,14 @@ function xpToLevel(xp: number): number {
 
 function createInitialState(): LifeDexState {
   const now = Date.now();
-  const sightings = SEED_ENTRIES.map((e, i) => buildSeedSighting(e, i, now));
-  // newest first
-  sightings.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Seed/demo data ONLY in mock mode. With a real recognition provider a fresh
+  // user starts with an empty collection (so dedup doesn't block their first
+  // real catch and their level reflects only real captures).
+  const sightings = env.isMockAi
+    ? SEED_ENTRIES.map((e, i) => buildSeedSighting(e, i, now)).sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      )
+    : [];
 
   const collectionCards = sightings.map(cardFromSighting);
   const totalXp = sightings.reduce((sum, s) => sum + s.xp, 0);
