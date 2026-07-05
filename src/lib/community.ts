@@ -11,6 +11,7 @@
  */
 import type { Sighting } from '@/domain/types';
 import { supabase } from './supabase';
+import { uploadCardImage } from './cardImageUpload';
 import {
   rowToCommunitySighting,
   sightingToRow,
@@ -48,7 +49,18 @@ export async function pushSighting(sighting: Sighting): Promise<void> {
   try {
     const userId = await ensureAnonSession();
     if (userId === null) return;
-    const { error } = await supabase.from(TABLE).insert(sightingToRow(sighting, userId));
+
+    // Resolve a shareable image URL. A local crop (file://) is uploaded to public
+    // storage; NEVER publish a local path. On any failure, fall back to a
+    // placeholder so other devices show the emoji card instead of a broken image.
+    let publicImageUri = sighting.publicImageUri;
+    if (publicImageUri.startsWith('file://')) {
+      const url = await uploadCardImage(userId, sighting.id, publicImageUri);
+      publicImageUri = url ?? `mock-card://${sighting.category}`;
+    }
+
+    const row = { ...sightingToRow(sighting, userId), public_image_uri: publicImageUri };
+    const { error } = await supabase.from(TABLE).insert(row);
     if (error !== null) console.warn('[LifeDex] pushSighting failed:', error.message);
   } catch (e) {
     console.warn('[LifeDex] pushSighting error', e);
