@@ -22,8 +22,10 @@
  */
 import { buildCardMetadata } from '@/domain/cardMetadata';
 import { evaluateDedup } from '@/domain/dedup';
+import { nextStreak } from '@/domain/streak';
 import type { GeoPoint, Sighting } from '@/domain/types';
 import { getProviders } from '@/providers';
+import { loadStreakMeta, saveStreakMeta } from '@/store/persistence';
 import { lifeDexStore, type CollectionCard } from '@/store/useLifeDexStore';
 import { pushSighting } from '@/lib/community';
 import { newId } from '@/utils/id';
@@ -124,6 +126,12 @@ export async function createSightingFromImage(
     };
   }
 
+  // 2c. Daily streak — a new discovery advances the consecutive-day streak; the
+  // scoring engine gives a small bonus for it.
+  const nowISO = new Date().toISOString();
+  const streakMeta = await loadStreakMeta();
+  const streak = nextStreak(streakMeta.lastCaptureISO, nowISO, streakMeta.streak);
+
   // 3. Scoring (rarity / XP).
   const score = providers.rarityScoring.score({
     recognition,
@@ -133,7 +141,7 @@ export async function createSightingFromImage(
     sensitivity: recognition.sensitivity,
     qualityOk: moderation.qualityOk,
     isFirstDiscovery: true,
-    streak: 0,
+    streak,
   });
 
   // 4. Location privacy — fuzz the true point (fallback to 0,0 when absent).
@@ -187,6 +195,9 @@ export async function createSightingFromImage(
   };
 
   const { cardId } = lifeDexStore.addSighting(sighting, collectionCard);
+
+  // Persist the advanced streak now that a new species was actually recorded.
+  void saveStreakMeta({ lastCaptureISO: nowISO, streak });
 
   // Share the public-safe version to the community feed (best-effort; no-op when
   // Supabase is disabled). Fire-and-forget so it never blocks the capture.

@@ -67,7 +67,46 @@ export async function saveUserCaptures(list: PersistedCapture[]): Promise<void> 
 export async function clearUserCaptures(): Promise<void> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem(STREAK_KEY);
   } catch {
     // ignore
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Daily streak meta                                                   */
+/* ------------------------------------------------------------------ */
+
+export interface StreakMeta {
+  /** ISO time of the last NEW-species capture, or null. */
+  lastCaptureISO: string | null;
+  /** Current consecutive-day streak. */
+  streak: number;
+}
+
+const STREAK_KEY = 'lifedex:streak:v1';
+
+export async function loadStreakMeta(): Promise<StreakMeta> {
+  try {
+    const raw = await AsyncStorage.getItem(STREAK_KEY);
+    if (raw === null) return { lastCaptureISO: null, streak: 0 };
+    const p = JSON.parse(raw) as Partial<StreakMeta>;
+    if (typeof p.streak === 'number') {
+      return {
+        lastCaptureISO: typeof p.lastCaptureISO === 'string' ? p.lastCaptureISO : null,
+        streak: p.streak,
+      };
+    }
+    return { lastCaptureISO: null, streak: 0 };
+  } catch {
+    return { lastCaptureISO: null, streak: 0 };
+  }
+}
+
+export async function saveStreakMeta(meta: StreakMeta): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STREAK_KEY, JSON.stringify(meta));
+  } catch {
+    // best-effort
   }
 }
