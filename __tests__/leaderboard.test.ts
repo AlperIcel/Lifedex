@@ -20,7 +20,7 @@ describe('aggregate', () => {
       row('user-b', 30, 'common', 'Common Frog'),
     ];
 
-    const result = aggregate(rows, null);
+    const result = aggregate(rows, null, null);
     const a = result.find((e) => e.userId === 'user-a');
     const b = result.find((e) => e.userId === 'user-b');
 
@@ -37,7 +37,7 @@ describe('aggregate', () => {
       row('user-b', 50, 'common', 'Silver Birch'),
     ];
 
-    const result = aggregate(rows, null);
+    const result = aggregate(rows, null, null);
 
     expect(result.map((e) => e.userId)).toEqual(['user-b', 'user-a']);
     expect(result[0]?.rank).toBe(1);
@@ -51,7 +51,7 @@ describe('aggregate', () => {
       row('user-a', 10, 'uncommon', 'English Oak'),
     ];
 
-    const result = aggregate(rows, null);
+    const result = aggregate(rows, null, null);
     expect(result.find((e) => e.userId === 'user-a')?.topRarity).toBe('legendary');
   });
 
@@ -62,33 +62,36 @@ describe('aggregate', () => {
       row('user-a', 10, 'common', 'European Robin'),
     ];
 
-    const result = aggregate(rows, null);
+    const result = aggregate(rows, null, null);
     const a = result.find((e) => e.userId === 'user-a');
     // 3 total sightings, but only 2 unique species were seen.
     expect(a?.sightings).toBe(3);
   });
 
-  it('merges in the local profile so "you" appear even with zero community rows', () => {
-    const profile: Profile = { id: 'me-1', username: 'Naturalist', xp: 500, level: 5 };
-    const result = aggregate([], profile);
+  it('shows "you" (by session uid) even with zero community rows — at 0 XP, not local XP', () => {
+    const profile: Profile = { id: 'mock-user-001', username: 'Naturalist', xp: 500, level: 5 };
+    // myUserId is the anon session uid, NOT profile.id.
+    const result = aggregate([], 'anon-uid-9', profile);
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.userId).toBe('me-1');
+    expect(result[0]?.userId).toBe('anon-uid-9');
     expect(result[0]?.username).toBe('Naturalist');
-    expect(result[0]?.xp).toBe(500);
+    // Local/seed XP must NOT leak into the community ranking.
+    expect(result[0]?.xp).toBe(0);
     expect(result[0]?.sightings).toBe(0);
     expect(result[0]?.rank).toBe(1);
   });
 
-  it('does not duplicate the local profile when it already has community rows', () => {
-    const profile: Profile = { id: 'me-1', username: 'Naturalist', xp: 20, level: 1 };
-    const rows: Row[] = [row('me-1', 20, 'common', 'Red Fox')];
+  it('does not duplicate you when your session uid already has community rows', () => {
+    const profile: Profile = { id: 'mock-user-001', username: 'Naturalist', xp: 20, level: 1 };
+    const rows: Row[] = [row('anon-uid-9', 20, 'common', 'Red Fox')];
 
-    const result = aggregate(rows, profile);
-    const mine = result.filter((e) => e.userId === 'me-1');
+    const result = aggregate(rows, 'anon-uid-9', profile);
+    const mine = result.filter((e) => e.userId === 'anon-uid-9');
 
     expect(mine).toHaveLength(1);
     expect(mine[0]?.username).toBe('Naturalist');
+    expect(mine[0]?.xp).toBe(20);
     expect(mine[0]?.sightings).toBe(1);
   });
 });

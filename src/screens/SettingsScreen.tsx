@@ -33,7 +33,11 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
 
   const exportData = async (): Promise<void> => {
     try {
-      const captures = await loadUserCaptures();
+      // Strip the private photo path — the export should not carry it.
+      const captures = (await loadUserCaptures()).map((c) => ({
+        ...c,
+        sighting: { ...c.sighting, privatePhotoUri: undefined },
+      }));
       const json = JSON.stringify({ profile: lifeDexStore.getProfile(), captures }, null, 2);
       await Share.share({ message: json, title: 'LifeDex data export' });
     } catch {

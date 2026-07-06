@@ -16,10 +16,11 @@
  */
 import type { Profile, Rarity, Sighting } from '@/domain/types';
 import { env } from '@/config/env';
-import { fetchCommunitySightings } from './community';
+import { fetchCommunitySightings, ensureAnonSession } from './community';
 import { lifeDexStore } from '@/store/useLifeDexStore';
 import {
   MOCK_LEADERBOARD,
+  MOCK_CURRENT_USER_ID,
   type LeaderboardEntry,
 } from '@/screens/leaderboard/mockData';
 
@@ -62,6 +63,7 @@ function displayNameFor(userId: string): string {
  */
 export function aggregate(
   rows: Pick<Sighting, 'userId' | 'xp' | 'rarity' | 'commonName'>[],
+  myUserId: string | null,
   myProfile: Profile | null,
 ): LeaderboardEntry[] {
   interface Acc {
@@ -94,30 +96,29 @@ export function aggregate(
     }
   }
 
-  // Merge in "you" so the local profile always has a row, even at 0 XP.
-  if (myProfile !== null) {
-    const mine = byUser.get(myProfile.id);
-    if (mine === undefined) {
-      byUser.set(myProfile.id, {
-        userId: myProfile.id,
-        xp: myProfile.xp,
-        sightings: 0,
-        species: new Set<string>(),
-        topRarity: 'common',
-      });
-    }
+  // Ensure "you" (the real anonymous session uid — the SAME id pushSighting
+  // writes under) appears, at 0 community XP if you haven't shared any finds.
+  // Do NOT inject the local profile.xp here — that XP is local/seed and must not
+  // pollute the community ranking.
+  if (myUserId !== null && !byUser.has(myUserId)) {
+    byUser.set(myUserId, {
+      userId: myUserId,
+      xp: 0,
+      sightings: 0,
+      species: new Set<string>(),
+      topRarity: 'common',
+    });
   }
+
+  const isMe = (userId: string): boolean => myUserId !== null && userId === myUserId;
 
   const unranked = Array.from(byUser.values()).sort((a, b) => b.xp - a.xp);
 
   return unranked.map((acc, index) => ({
     userId: acc.userId,
-    username:
-      myProfile !== null && acc.userId === myProfile.id
-        ? myProfile.username
-        : displayNameFor(acc.userId),
+    username: isMe(acc.userId) && myProfile !== null ? myProfile.username : displayNameFor(acc.userId),
     xp: acc.xp,
-    level: myProfile !== null && acc.userId === myProfile.id ? myProfile.level : 0,
+    level: isMe(acc.userId) && myProfile !== null ? myProfile.level : 0,
     rank: index + 1,
     sightings: acc.sightings,
     topRarity: acc.topRarity,
@@ -129,22 +130,28 @@ export function aggregate(
  * simulated (MOCK_LEADERBOARD) otherwise or on any failure/empty result.
  */
 export async function loadLeaderboard(): Promise<LeaderboardResult> {
-  if (!env.useSupabase) {
-    return { entries: MOCK_LEADERBOARD, source: 'simulated', myUserId: null };
-  }
+  // Simulated board carries the mock current user so the "(You)" highlight +
+  // your-rank bar still render.
+  const simulated: LeaderboardResult = {
+    entries: MOCK_LEADERBOARD,
+    source: 'simulated',
+    myUserId: MOCK_CURRENT_USER_ID,
+  };
+
+  if (!env.useSupabase) return simulated;
 
   try {
-    const sightings = await fetchCommunitySightings(COMMUNITY_FETCH_LIMIT);
-    const myProfile = lifeDexStore.getProfile();
-    const entries = aggregate(sightings, myProfile);
+    const [myUserId, sightings] = await Promise.all([
+      ensureAnonSession(),
+      fetchCommunitySightings(COMMUNITY_FETCH_LIMIT),
+    ]);
+    const entries = aggregate(sightings, myUserId, lifeDexStore.getProfile());
 
-    if (entries.length === 0) {
-      return { entries: MOCK_LEADERBOARD, source: 'simulated', myUserId: null };
-    }
+    if (entries.length === 0) return simulated;
 
-    return { entries, source: 'community', myUserId: myProfile.id };
+    return { entries, source: 'community', myUserId };
   } catch (e) {
     console.warn('[LifeDex] loadLeaderboard error', e);
-    return { entries: MOCK_LEADERBOARD, source: 'simulated', myUserId: null };
+    return simulated;
   }
 }

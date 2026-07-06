@@ -61,18 +61,12 @@ export function computeCropRect(
   const cx = padded.x + padded.w / 2;
   const cy = padded.y + padded.h / 2;
 
-  let originX = cx - side / 2;
-  let originY = cy - side / 2;
+  // Floor the side FIRST, then clamp+floor the origin against the floored side,
+  // so `origin + width` can never exceed the image bounds after rounding
+  // (expo-image-manipulator throws on an out-of-bounds crop).
+  const sideR = Math.floor(Math.min(side, imgW, imgH));
+  const originX = Math.floor(clamp(cx - sideR / 2, 0, imgW - sideR));
+  const originY = Math.floor(clamp(cy - sideR / 2, 0, imgH - sideR));
 
-  // Clamp fully inside the image.
-  originX = clamp(originX, 0, imgW - side);
-  originY = clamp(originY, 0, imgH - side);
-  side = Math.min(side, imgW, imgH);
-
-  return {
-    originX: Math.round(originX),
-    originY: Math.round(originY),
-    width: Math.round(side),
-    height: Math.round(side),
-  };
+  return { originX, originY, width: sideR, height: sideR };
 }

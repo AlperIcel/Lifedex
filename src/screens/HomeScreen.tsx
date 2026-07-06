@@ -220,8 +220,9 @@ export function HomeScreen(): React.JSX.Element {
   const lb = useMemo(() => levelBounds(profile.xp), [profile.xp]);
 
   const handleDiscoveryPress = useCallback(
-    (cardId: string) => {
-      navigation.navigate('CardDetail', { cardId });
+    (sightingId: string) => {
+      // CardDetail resolves via getCardById; card ids follow `card-<sightingId>`.
+      navigation.navigate('CardDetail', { cardId: `card-${sightingId}` });
     },
     [navigation],
   );

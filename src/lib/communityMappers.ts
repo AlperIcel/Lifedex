@@ -51,8 +51,10 @@ export function sightingToRow(s: Sighting, userId: string): CommunityInsert {
     captive_status: s.captiveStatus,
     sensitivity: s.sensitivity,
     public_image_uri: s.publicImageUri,
-    public_lat: s.publicLocation.lat,
-    public_lng: s.publicLocation.lng,
+    // Protected/hidden species: never send even the coarse coordinate to the
+    // server — hidden must not depend on client rendering discipline.
+    public_lat: s.publicLocation.hidden ? null : s.publicLocation.lat,
+    public_lng: s.publicLocation.hidden ? null : s.publicLocation.lng,
     public_precision_m: s.publicLocation.precisionMeters,
     location_hidden: s.publicLocation.hidden,
     card: s.card,

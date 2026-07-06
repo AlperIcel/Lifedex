@@ -55,5 +55,9 @@ export function annotate(imageUri: string, apiKey: string): Promise<VisionAnnota
   if (cache !== null && cache.key === imageUri) return cache.promise;
   const promise = doAnnotate(imageUri, apiKey);
   cache = { key: imageUri, promise };
+  // Don't cache a rejection — a retry (or the other provider) should re-fetch.
+  void promise.catch(() => {
+    if (cache !== null && cache.key === imageUri) cache = null;
+  });
   return promise;
 }

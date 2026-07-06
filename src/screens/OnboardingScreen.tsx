@@ -188,7 +188,14 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
 
   const finish = useCallback(() => {
     void setOnboarded();
-    navigation.replace('Tabs', { screen: 'Home' });
+    // First run: Onboarding is the initial route (no back stack) → enter the app.
+    // Re-opened from Settings ("Review rules"): just pop back, don't push a second
+    // Tabs instance onto the stack.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('Tabs', { screen: 'Home' });
+    }
   }, [navigation]);
 
   const handleNext = useCallback(() => {
