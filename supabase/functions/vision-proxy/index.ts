@@ -31,6 +31,17 @@ serve(async (req: Request): Promise<Response> => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
+  // Require a bearer token so this isn't an open relay for the owner's paid key.
+  // Deploy WITHOUT --no-verify-jwt so Supabase validates the JWT before we run;
+  // this check is defense-in-depth. Add per-user rate limiting here before scale.
+  const auth = req.headers.get('Authorization');
+  if (auth === null || !auth.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const key = Deno.env.get('GOOGLE_CLOUD_VISION_KEY');
   if (!key) {
     return new Response(JSON.stringify({ error: 'proxy misconfigured (no key)' }), {

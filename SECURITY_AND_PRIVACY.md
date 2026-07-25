@@ -6,20 +6,21 @@ This document describes how LifeDex handles user data, original photos, location
 
 ## 1. Original photos are private
 
-Every photo taken or picked from the gallery is treated as **private evidence** from the moment the shutter fires.
+Only a live camera photo can be used (gallery upload is removed), and it is treated as **private evidence** from the moment the shutter fires.
 
-- `privatePhotoUri` is stored in the `private-photos` Supabase Storage bucket.
-- The bucket is **private**. RLS policies allow read access only to `auth.uid() = owner_id`. No public URL is ever generated for this bucket.
-- The original photo is **never** passed to the card-generation provider. Only the AI-generated recreation (`publicImageUri`) appears on public surfaces.
-- `privatePhotoUri` is never rendered in any screen other than local device memory during the pipeline run. The `CardView`, `CardDetailScreen`, `ResultScreen`, `CollectionScreen`, and `MapScreen` components all read `publicImageUri` only.
+- The original full photo stays **only on the device** (a local `file://` camera URI referenced by `privatePhotoUri`). It is **never uploaded** to any server and never generated a public URL. (Note: it is not separately encrypted at rest beyond the OS sandbox.)
+- `privatePhotoUri` is never rendered on any screen. `CardView`, `CardDetailScreen`, `ResultScreen`, `CollectionScreen`, and `MapScreen` all read `publicImageUri` only.
+- Moderation blocks faces, people, and license plates **before** any card is created (see §3), so the processed card cannot contain them.
 
-## 2. Public cards are AI recreations
+## 2. Public cards are a processed crop, not the full photo
 
-The collectible card shown to other users, stored in `card-images`, and displayed on the map is an **AI-generated illustration** of the species — not a crop, filter, or edit of the original photo.
+The collectible card shown to other users (uploaded to the `card-images` bucket, shown on the map) is, by default, a **subject crop** of your photo — cropped on-device to the recognized subject's bounding box, so the surrounding background/context is removed — never the full original image. A **premium AI-restyle** option (later) replaces the crop with a generated illustration.
 
-This distinction is structural:
-- `CardImageGenerationProvider.generateCard()` receives `CardMetadata` and `RecognitionResult` — neither carries the original image URI.
-- The interface contract prevents any provider implementation from accessing the private photo.
+What is structurally guaranteed (not just convention):
+- The original **full** photo and the **exact** GPS point never leave the device. Only the processed card image and a **fuzzed** location are ever uploaded (`communityMappers.sightingToRow` maps public-safe fields only, and nulls coordinates for hidden/protected species).
+- `CardImageGenerationProvider.generateCard()` receives the image URI solely to produce that on-device crop; its output is the only image that becomes public.
+
+Honest caveat: because the default card is a crop of real pixels, tightly-framed shots could still include some incidental background. For maximum privacy, the premium AI-restyle removes original pixels entirely; wiring it is a tracked next step.
 
 ## 3. Moderation pipeline
 

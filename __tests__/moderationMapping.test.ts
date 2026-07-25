@@ -69,6 +69,12 @@ describe('mapModeration', () => {
     const r = mapModeration({ ...CLEAN, safeSearchAnnotation: { adult: 'POSSIBLE', racy: 'POSSIBLE' } });
     expect(r.allowed).toBe(true);
   });
+
+  it('blocks a spoofed/screenshot image (anti-spoof)', () => {
+    const r = mapModeration({ ...CLEAN, safeSearchAnnotation: { spoof: 'VERY_LIKELY' } });
+    expect(r.allowed).toBe(false);
+    expect(r.reasons.join(' ')).toMatch(/screenshot|edited|live photo/i);
+  });
 });
 
 describe('mapModeration — real Vision output (regression fixtures)', () => {

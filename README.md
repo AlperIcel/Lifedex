@@ -1,11 +1,11 @@
 # LifeDex
 
-A Pokemon-GO-style mobile app for discovering **real** animals, plants, trees, and mushrooms. Photograph a living thing, identify it, earn XP and rarity scores, and collect a trading card — an AI recreation of what you found, not your original photo.
+A Pokemon-GO-style mobile app for discovering **real** animals, plants, trees, and mushrooms. Photograph a living thing, identify it, earn XP and rarity scores, and collect a trading card — a processed subject crop of your photo (background removed), or a premium AI illustration — never your full original photo.
 
 ## Core product rules
 
-1. The original photo is **private evidence only** — it is stored encrypted, never shared publicly.
-2. The public card is an **AI recreation**. The photo never leaves your device's private storage bucket.
+1. The original photo is **private evidence only** — it stays on your device (OS sandbox) and is never uploaded or shared publicly.
+2. The public card is a **subject crop** of your photo (background removed) by default, or a premium AI illustration. Only that processed card — never the full original — is uploaded.
 3. Faces, people, license plates, house numbers, and private interiors are **hard-blocked** before anything is stored.
 4. Exact GPS is **never public** for sensitive, protected, or rare species (nests, young animals). Coordinates are fuzzed to a grid cell sized by species sensitivity tier.
 5. Zoo and captive animals are a separate category with capped XP; they do not appear on wild discovery leaderboards.

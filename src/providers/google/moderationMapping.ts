@@ -53,12 +53,25 @@ export function mapModeration(res: VisionAnnotateResponse): ModerationResult {
   const base = decideModeration(toSignals(res));
 
   const ss = res.safeSearchAnnotation;
-  if (ss !== undefined && (isBad(ss.adult) || isBad(ss.violence) || isBad(ss.racy))) {
-    return {
-      ...base,
-      allowed: false,
-      reasons: [...base.reasons, 'Inappropriate content detected — photo blocked.'],
-    };
+  if (ss !== undefined) {
+    if (isBad(ss.adult) || isBad(ss.violence) || isBad(ss.racy)) {
+      return {
+        ...base,
+        allowed: false,
+        reasons: [...base.reasons, 'Inappropriate content detected — photo blocked.'],
+      };
+    }
+    // Anti-spoof: a screenshot / meme / edited image should not count as a catch.
+    if (isBad(ss.spoof)) {
+      return {
+        ...base,
+        allowed: false,
+        reasons: [
+          ...base.reasons,
+          'This looks like a screenshot or edited image — capture a live photo of a real subject.',
+        ],
+      };
+    }
   }
 
   return base;

@@ -12,6 +12,7 @@
 import * as FileSystem from 'expo-file-system';
 
 import { env } from '@/config/env';
+import { supabase } from '@/lib/supabase';
 import type { VisionAnnotateResponse } from './visionMapping';
 
 const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
@@ -32,10 +33,25 @@ async function doAnnotate(imageUri: string, apiKey: string): Promise<VisionAnnot
   });
 
   // Prefer the server-side proxy (key stays off-device); else call Google directly.
+  const useProxy = env.visionProxyUrl !== undefined;
   const url = env.visionProxyUrl ?? `${ENDPOINT}?key=${apiKey}`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (useProxy && supabase !== null) {
+    // Send the anon session token so the proxy (JWT-verified) only serves signed-in
+    // devices — not the open internet burning the owner's Vision budget.
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token !== undefined) headers.Authorization = `Bearer ${token}`;
+    } catch {
+      // best-effort — proxy will reject if it requires auth
+    }
+  }
+
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ requests: [{ image: { content: base64 }, features: FEATURES }] }),
   });
 

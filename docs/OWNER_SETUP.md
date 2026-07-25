@@ -27,11 +27,15 @@ otherwise).
 ## 3. Secure the Vision key (before any public release) — IMPORTANT
 Right now the Vision key ships inside the app bundle (fine for private testing,
 NOT for release — it can be extracted and abused on your bill). To proxy it:
-1. Deploy the edge function: `supabase functions deploy vision-proxy`
+1. Deploy the edge function (KEEP JWT verification on — do NOT pass
+   `--no-verify-jwt`): `supabase functions deploy vision-proxy`
 2. Set the secret server-side: `supabase secrets set GOOGLE_CLOUD_VISION_KEY=<key>`
 3. In `.env`, set `VISION_PROXY_URL=https://<project>.functions.supabase.co/vision-proxy`
    and REMOVE `GOOGLE_CLOUD_VISION_KEY` from the client `.env`.
-The client uses the proxy when `VISION_PROXY_URL` is set, else the direct key.
+The client uses the proxy when `VISION_PROXY_URL` is set (and now sends the anon
+session token), else the direct key. With JWT verification on, only signed-in
+devices can call it — not the open internet. Add per-user rate limiting in the
+function before any real scale.
 *(Function code + this wiring land in a follow-up slice; documented here so the
 security step isn't forgotten.)*
 
