@@ -14,6 +14,7 @@
 import { env } from '../config/env';
 import { DefaultLocationPrivacyProvider } from '../domain/locationPrivacy';
 import { DefaultRarityScoringProvider } from '../domain/scoring';
+import { rarityForRecognition } from '../domain/speciesRules';
 import { MockCardGenProvider } from './mock/mockCardGen';
 import { MockModerationProvider } from './mock/mockModeration';
 import { MockVisionProvider } from './mock/mockVision';
@@ -53,7 +54,11 @@ export interface Providers {
 export function getProviders(): Providers {
   // LocationPrivacy and RarityScoring are domain-pure — always use the same impl.
   const locationPrivacy: LocationPrivacyProvider = new DefaultLocationPrivacyProvider();
-  const rarityScoring: RarityScoringProvider = new DefaultRarityScoringProvider();
+  // Wire the species-rules resolver so a recognized species gets its real
+  // baseRarity (epic/legendary become reachable, not capped at 'rare').
+  const rarityScoring: RarityScoringProvider = new DefaultRarityScoringProvider((input) =>
+    rarityForRecognition(input.recognition),
+  );
 
   if (env.aiProvider === 'mock') {
     return {

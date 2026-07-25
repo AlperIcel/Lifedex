@@ -22,6 +22,7 @@
  */
 import { buildCardMetadata } from '@/domain/cardMetadata';
 import { evaluateDedup } from '@/domain/dedup';
+import { applySpeciesRule } from '@/domain/speciesRules';
 import { nextStreak } from '@/domain/streak';
 import type { GeoPoint, Sighting } from '@/domain/types';
 import { getProviders } from '@/providers';
@@ -104,7 +105,10 @@ export async function createSightingFromImage(
   }
 
   // 2. Recognition. mockSpecies is an optional mock-mode hint; ignored by real providers.
-  const recognition = await providers.vision.recognize(imageUri, mockSpecies);
+  const rawRecognition = await providers.vision.recognize(imageUri, mockSpecies);
+  // Override sensitivity from the species catalogue so protected/at-risk species
+  // are actually hidden/fuzzed even when the provider reported 'none'.
+  const recognition = applySpeciesRule(rawRecognition);
 
   // 2b. De-duplication — a species is registered once. A re-catch returns the
   // existing entry without creating a new record or crediting XP.
