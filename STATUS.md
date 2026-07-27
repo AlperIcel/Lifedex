@@ -4,7 +4,7 @@
 > resuming, and UPDATE it whenever something meaningful changes. Working dir:
 > `C:\Users\Alper\Downloads\LifeDex`.
 >
-> **Last updated:** 2026-07-05
+> **Last updated:** 2026-07-27
 
 ---
 
@@ -26,12 +26,14 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 312 passing
+npm test                 # jest — currently 385 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
-Real recognition needs `.env` (gitignored): `AI_PROVIDER=google` +
-`GOOGLE_CLOUD_VISION_KEY=…`. Without it the app runs fully in mock mode.
+Real recognition needs `.env` (gitignored). Best: `AI_PROVIDER=inaturalist` +
+`INATURALIST_API_TOKEN=…` (+ optional `PLANTNET_API_KEY=…`) for species-accurate
+IDs. Alt: `AI_PROVIDER=google` + `GOOGLE_CLOUD_VISION_KEY=…` (generic labels).
+Without any of it the app runs fully in mock mode.
 Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 
 ## Current state at a glance
@@ -47,7 +49,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Settings / privacy / export / delete | ✅ |
 | Maps | ⚠️ stylised MockMapView; native gated behind an (unset) key + dev build |
 | Real accounts | ❌ anonymous-only (device = identity) |
-| Recognition ENGINE quality | ⚠️ Google Vision is generic ("Bird"/"Flower"); iNaturalist/PlantNet is the right backend |
+| Recognition ENGINE quality | ✅ REAL species-accurate adapter built (iNaturalist CV + PlantNet, key-ready, mock/Google fallback); needs owner API token to activate |
 | Server-side score validation (anti-XP-spoof) | ❌ XP computed client-side |
 | EAS build / store / push / monetization | ❌ not built |
 | GDPR deletion/export | ⚠️ local + community rows done; Storage files + full flow partial |
@@ -57,6 +59,18 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Species-accurate recognition adapter** (biggest lever, priority #1): iNaturalist
+  Computer Vision (fauna/fungi) + PlantNet (flora refiner), env-gated behind
+  `AI_PROVIDER=inaturalist`, key-ready like the Google provider — falls back to
+  mock (no keys) / Google. Composite picks the more-confident of iNat vs PlantNet
+  for flora. `src/providers/inaturalist/` + `src/providers/plantnet/`, wired in
+  `providers/index.ts`, env in `config/env.ts` + `.env.example`. Privacy invariant
+  enforced + regression-tested: the CV calls send the photo ONLY — never lat/lng.
+  Built by an Opus 5 + Fable 5 pair on disjoint files, then adversarial cross-review
+  (each model reviewed the other's adapter) — fixed a shared NaN-score bug that
+  bypassed the confidence gate, nested-field TypeError guards, rank-set
+  inconsistency, and a blind-fallback that would mislabel an animal as a plant.
+  +73 tests (312 → 385).
 - Full **Apple-level design overhaul** (theme v2, Ionicons, haptics, motion, all 8
   screens + tab bar, Settings, empty/loading states).
 - **Real Google Vision** recognition + moderation (one shared API call/photo).
@@ -69,9 +83,13 @@ real accounts, scale moderation) remain.
   identity, protected-coord leak, crop overflow, etc.).
 
 ## Next up (prioritized — from the dual review)
-1. 🔑 **Real recognition engine — iNaturalist (fauna) + PlantNet (flora) adapter.**
-   THE biggest lever; makes IDs species-accurate. Needs API key(s) from the owner;
-   build it key-ready like the Google provider.
+1. 🔑 **Activate the recognition engine (owner):** set `AI_PROVIDER=inaturalist` +
+   `INATURALIST_API_TOKEN` (token from inaturalist.org/users/api_token), optional
+   `PLANTNET_API_KEY`. Then live-verify real IDs on real photos and tune the
+   confidence thresholds against actual API output. Optional: deploy off-device
+   proxies (`INAT_PROXY_URL` / `PLANTNET_PROXY_URL`) like the Vision proxy. Also
+   worth verifying at integration: iNat may want the api_token WITHOUT a `Bearer`
+   prefix (see comment in `inatClient.ts`).
 2. **Server-side score validation** (Supabase Edge Function re-computes XP,
    rejects spoofed inserts) — client-minted XP is currently trust-based.
 3. **Dedup retention tuning** — re-catch should grant small XP instead of 0
@@ -92,7 +110,8 @@ key + dev build.
   speciesRules, streak, types (Zod, single source of truth).
 - Pipeline (one write-point): `src/services/sightingPipeline.ts`.
 - Store (one reactive singleton): `src/store/useLifeDexStore.ts` + `persistence.ts`.
-- Providers (swap real/mock): `src/providers/` — `interfaces.ts`, `mock/`, `google/`.
+- Providers (swap real/mock): `src/providers/` — `interfaces.ts`, `mock/`, `google/`,
+  `inaturalist/` (CV, primary), `plantnet/` (flora refiner). Factory: `index.ts`.
 - Backend glue: `src/lib/` — supabase, community, cardImageUpload, leaderboard, onboarding.
 - UI: `src/screens/`, shared `src/components/`, `src/theme/theme.ts`, `src/navigation/`.
 - Backend SQL/functions/docs: `supabase/`, `docs/`.

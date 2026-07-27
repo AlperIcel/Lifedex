@@ -18,6 +18,13 @@ const RawEnvSchema = z.object({
   MAPS_PROVIDER: ProviderSchema.default('mock'),
   GOOGLE_CLOUD_VISION_KEY: z.string().optional().or(z.literal('')),
   VISION_PROXY_URL: z.string().optional().or(z.literal('')),
+  // iNaturalist Computer Vision (fauna/fungi) + PlantNet (flora). Enabled with
+  // AI_PROVIDER=inaturalist. Each has an optional off-device proxy so the token
+  // never ships in the client bundle (mirrors the Vision proxy pattern).
+  INATURALIST_API_TOKEN: z.string().optional().or(z.literal('')),
+  INAT_PROXY_URL: z.string().optional().or(z.literal('')),
+  PLANTNET_API_KEY: z.string().optional().or(z.literal('')),
+  PLANTNET_PROXY_URL: z.string().optional().or(z.literal('')),
 });
 
 type RawEnv = z.infer<typeof RawEnvSchema>;
@@ -40,6 +47,10 @@ function readRaw(): Record<string, string | undefined> {
     MAPS_PROVIDER: pick('MAPS_PROVIDER'),
     GOOGLE_CLOUD_VISION_KEY: pick('GOOGLE_CLOUD_VISION_KEY'),
     VISION_PROXY_URL: pick('VISION_PROXY_URL'),
+    INATURALIST_API_TOKEN: pick('INATURALIST_API_TOKEN'),
+    INAT_PROXY_URL: pick('INAT_PROXY_URL'),
+    PLANTNET_API_KEY: pick('PLANTNET_API_KEY'),
+    PLANTNET_PROXY_URL: pick('PLANTNET_PROXY_URL'),
   };
 }
 
@@ -80,6 +91,26 @@ export const env = {
   visionProxyUrl:
     parsed.VISION_PROXY_URL !== undefined && parsed.VISION_PROXY_URL.length > 0
       ? parsed.VISION_PROXY_URL
+      : undefined,
+  /** iNaturalist API token (Bearer). Undefined unless configured. */
+  inatApiToken:
+    parsed.INATURALIST_API_TOKEN !== undefined && parsed.INATURALIST_API_TOKEN.length > 0
+      ? parsed.INATURALIST_API_TOKEN
+      : undefined,
+  /** Optional off-device proxy for the iNaturalist CV call (keeps token off-device). */
+  inatProxyUrl:
+    parsed.INAT_PROXY_URL !== undefined && parsed.INAT_PROXY_URL.length > 0
+      ? parsed.INAT_PROXY_URL
+      : undefined,
+  /** PlantNet API key. Undefined unless configured. */
+  plantnetApiKey:
+    parsed.PLANTNET_API_KEY !== undefined && parsed.PLANTNET_API_KEY.length > 0
+      ? parsed.PLANTNET_API_KEY
+      : undefined,
+  /** Optional off-device proxy for the PlantNet call (keeps key off-device). */
+  plantnetProxyUrl:
+    parsed.PLANTNET_PROXY_URL !== undefined && parsed.PLANTNET_PROXY_URL.length > 0
+      ? parsed.PLANTNET_PROXY_URL
       : undefined,
   isMockAi,
   isMockMaps,

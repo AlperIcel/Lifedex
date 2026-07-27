@@ -21,6 +21,8 @@ import { MockVisionProvider } from './mock/mockVision';
 import { GoogleVisionProvider } from './google/googleVision';
 import { GoogleModerationProvider } from './google/googleModeration';
 import { CropCardGenProvider } from './google/cropCardGen';
+import { INatRecognitionProvider } from './inaturalist/inatVision';
+import { PlantNetProvider } from './plantnet/plantnetProvider';
 import type {
   CardImageGenerationProvider,
   ImageModerationProvider,
@@ -65,6 +67,35 @@ export function getProviders(): Providers {
       vision: new MockVisionProvider(),
       moderation: new MockModerationProvider(),
       cardGen: new MockCardGenProvider(),
+      locationPrivacy,
+      rarityScoring,
+    };
+  }
+
+  // Real species-accurate recognition via iNaturalist CV (fauna/fungi) with
+  // PlantNet as a flora refiner. Enabled when AI_PROVIDER=inaturalist AND an iNat
+  // token OR proxy is configured. Moderation reuses Google Vision when a Vision
+  // key/proxy is present (iNat/PlantNet don't moderate), else stays mock. Card
+  // image is the free on-device subject crop.
+  if (
+    env.aiProvider === 'inaturalist' &&
+    (env.inatApiToken !== undefined || env.inatProxyUrl !== undefined)
+  ) {
+    const floraRefiner =
+      env.plantnetApiKey !== undefined || env.plantnetProxyUrl !== undefined
+        ? new PlantNetProvider({ apiKey: env.plantnetApiKey, proxyUrl: env.plantnetProxyUrl })
+        : undefined;
+    const moderation: ImageModerationProvider =
+      env.googleVisionKey !== undefined || env.visionProxyUrl !== undefined
+        ? new GoogleModerationProvider(env.googleVisionKey ?? '')
+        : new MockModerationProvider();
+    return {
+      vision: new INatRecognitionProvider(
+        { apiToken: env.inatApiToken, proxyUrl: env.inatProxyUrl },
+        floraRefiner,
+      ),
+      moderation,
+      cardGen: new CropCardGenProvider(),
       locationPrivacy,
       rarityScoring,
     };
