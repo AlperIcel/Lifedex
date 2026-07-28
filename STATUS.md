@@ -46,6 +46,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Local persistence (survives restart) | ✅ AsyncStorage |
 | Community feed + leaderboard | ✅ real when Supabase configured; simulated fallback |
 | Design (all 8 screens + tab bar) | ✅ Apple-level overhaul (Ionicons, haptics, motion) |
+| Localization | ✅ EN/DE — device-default + in-app switch (Settings); `src/i18n/` |
 | Settings / privacy / export / delete | ✅ game-style sections + real haptics/units toggles (`store/settings.ts`) |
 | Maps | ⚠️ stylised MockMapView; native gated behind an (unset) key + dev build |
 | Real accounts | ❌ anonymous-only (device = identity) |
@@ -59,6 +60,14 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Multi-language (EN/DE)** — lightweight i18n engine (`src/i18n/`): reactive,
+  persisted language store, co-located `useT(catalog)` per screen + shared
+  `useCommon()` enum labels (rarity/category/captive). Auto-default from the
+  DEVICE LOCALE (German/DACH device → German, else English) — deliberately NOT
+  IP-geolocation, to honour the privacy stance. Switchable anytime in Settings
+  (Language section). All 8 screens + tab bar + RarityBadge translated; English
+  kept byte-identical so tests pass. Built by 5 parallel screen agents + engine;
+  reconciled after concurrent-edit churn. +7 tests (398 → 405).
 - **On-device test sprint (real Android via Expo Go)** — batch of end-user fixes:
   - **Discovery-hunt de-dup:** same species is now catchable again only >~1 km
     away (`NEARBY_METERS`); within 1 km → blocked with an "already found nearby,

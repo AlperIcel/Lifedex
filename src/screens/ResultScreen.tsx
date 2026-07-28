@@ -62,7 +62,49 @@ import {
   radius,
   typography,
 } from '@/theme/theme';
-import type { Rarity, Category, CaptiveStatus } from '@/domain/types';
+import type { Rarity, Category } from '@/domain/types';
+import { useT, useCommon } from '@/i18n';
+
+/* ------------------------------------------------------------------ */
+/* i18n                                                                */
+/* ------------------------------------------------------------------ */
+
+const C = {
+  en: {
+    cardBackTagline: 'Nature Collected',
+    protectedSpecies: 'Protected Species',
+    sensitive: 'Sensitive',
+    blocked: 'Blocked',
+    matchPercent: '{percent}% match',
+    locationHidden: 'Location hidden (protected species)',
+    locationFuzzed: 'Location fuzzed to ~{km} km',
+    conservationNotice: 'Conservation Notice',
+    mockDetectionNotice: 'Mock Detection — real AI recognition not connected yet',
+    sightingNotFound: 'Sighting Not Found',
+    sightingNotFoundBody:
+      'This sighting record could not be loaded. It may not have been saved yet.',
+    goBack: 'Go Back',
+    viewCollection: 'View Collection',
+    captureAnother: 'Capture Another',
+  },
+  de: {
+    cardBackTagline: 'Natur gesammelt',
+    protectedSpecies: 'Geschützte Art',
+    sensitive: 'Sensible Art',
+    blocked: 'Blockiert',
+    matchPercent: '{percent}% Übereinstimmung',
+    locationHidden: 'Standort verborgen (geschützte Art)',
+    locationFuzzed: 'Standort auf ca. {km} km verwischt',
+    conservationNotice: 'Naturschutzhinweis',
+    mockDetectionNotice: 'Mock-Erkennung — echte KI-Erkennung noch nicht angebunden',
+    sightingNotFound: 'Sichtung nicht gefunden',
+    sightingNotFoundBody:
+      'Dieser Sichtungseintrag konnte nicht geladen werden. Er wurde möglicherweise noch nicht gespeichert.',
+    goBack: 'Zurück',
+    viewCollection: 'Sammlung ansehen',
+    captureAnother: 'Nochmal aufnehmen',
+  },
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Types & constants                                                    */
@@ -98,13 +140,6 @@ const CATEGORY_ICONS: Record<Category, keyof typeof Ionicons.glyphMap> = {
   tree: 'leaf-outline',
   mushroom: 'umbrella-outline',
   unknown: 'help-circle-outline',
-};
-
-const CAPTIVE_LABELS: Record<CaptiveStatus, string | null> = {
-  wild: null,
-  domestic: 'Domestic',
-  zoo_captive: 'Zoo / Captive',
-  unknown: null,
 };
 
 /* ------------------------------------------------------------------ */
@@ -332,6 +367,7 @@ interface CardFaceProps {
 
 /** The visible face of the collectible card. */
 function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element {
+  const common = useCommon();
   const rarityColor = rarityColors[card.rarity];
 
   return (
@@ -367,7 +403,7 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
             color={colors.textSecondary}
           />
           <Text style={styles.cardCategory}>
-            {card.category.charAt(0).toUpperCase() + card.category.slice(1)}
+            {common.category(card.category)}
           </Text>
         </View>
 
@@ -389,13 +425,14 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
 
 /** Card back — shown while the reveal waits. */
 function CardBack(): React.JSX.Element {
+  const t = useT(C);
   return (
     <View style={[styles.cardFace, styles.cardBack]}>
       <View style={styles.cardBackEmblem}>
         <Ionicons name="leaf-outline" size={36} color={colors.accent} />
       </View>
       <Text style={styles.cardBackLogo}>LifeDex</Text>
-      <Text style={styles.cardBackSub}>Nature Collected</Text>
+      <Text style={styles.cardBackSub}>{t('cardBackTagline')}</Text>
     </View>
   );
 }
@@ -507,7 +544,12 @@ function StatusBadges({
   sighting: Sighting;
   rarity: Rarity;
 }): React.JSX.Element {
-  const captiveLabel = CAPTIVE_LABELS[sighting.captiveStatus];
+  const t = useT(C);
+  const common = useCommon();
+  const captiveLabel =
+    sighting.captiveStatus === 'domestic' || sighting.captiveStatus === 'zoo_captive'
+      ? common.captive(sighting.captiveStatus)
+      : null;
 
   return (
     <View style={styles.badgeRow}>
@@ -518,27 +560,27 @@ function StatusBadges({
       {captiveLabel !== null ? (
         <StatusPill icon="paw-outline" label={captiveLabel} color={colors.warning} />
       ) : (
-        <StatusPill icon="paw-outline" label="Wild" color={colors.success} />
+        <StatusPill icon="paw-outline" label={common.captive('wild')} color={colors.success} />
       )}
 
       {/* Sensitivity badge */}
       {(sighting.sensitivity === 'sensitive' || sighting.sensitivity === 'protected') && (
         <StatusPill
           icon="shield-outline"
-          label={sighting.sensitivity === 'protected' ? 'Protected Species' : 'Sensitive'}
+          label={sighting.sensitivity === 'protected' ? t('protectedSpecies') : t('sensitive')}
           color={colors.danger}
         />
       )}
 
       {/* Moderation blocked badge */}
       {!sighting.moderation.allowed && (
-        <StatusPill icon="alert-circle-outline" label="Blocked" color={colors.danger} />
+        <StatusPill icon="alert-circle-outline" label={t('blocked')} color={colors.danger} />
       )}
 
       {/* Confidence */}
       <StatusPill
         icon="analytics-outline"
-        label={`${Math.round(sighting.confidence * 100)}% match`}
+        label={t('matchPercent', { percent: Math.round(sighting.confidence * 100) })}
         color={colors.textSecondary}
       />
     </View>
@@ -550,11 +592,12 @@ function StatusBadges({
 /* ------------------------------------------------------------------ */
 
 function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element | null {
+  const t = useT(C);
   if (sighting.publicLocation.hidden) {
     return (
       <View style={styles.locationNote}>
         <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />
-        <Text style={styles.locationNoteText}>Location hidden (protected species)</Text>
+        <Text style={styles.locationNoteText}>{t('locationHidden')}</Text>
       </View>
     );
   }
@@ -563,7 +606,7 @@ function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element |
     return (
       <View style={styles.locationNote}>
         <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
-        <Text style={styles.locationNoteText}>Location fuzzed to ~{precisionKm} km</Text>
+        <Text style={styles.locationNoteText}>{t('locationFuzzed', { km: precisionKm })}</Text>
       </View>
     );
   }
@@ -575,12 +618,13 @@ function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element |
 /* ------------------------------------------------------------------ */
 
 function SafetyNotes({ notes }: { notes: string[] }): React.JSX.Element | null {
+  const t = useT(C);
   if (notes.length === 0) return null;
   return (
     <View style={styles.safetyBox}>
       <View style={styles.safetyTitleRow}>
         <Ionicons name="shield-outline" size={13} color={colors.danger} />
-        <Text style={styles.safetyTitle}>Conservation Notice</Text>
+        <Text style={styles.safetyTitle}>{t('conservationNotice')}</Text>
       </View>
       {notes.map((note, i) => (
         <Text key={i} style={styles.safetyNote}>
@@ -655,6 +699,7 @@ type Phase = 'flipping' | 'revealed';
 const REVEAL_GROUPS = 6;
 
 export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
+  const t = useT(C);
   const { sightingId } = route.params;
 
   // Synchronous store lookup — no async, no pipeline.
@@ -720,9 +765,9 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
         <StatusBar barStyle="light-content" backgroundColor={colors.background} />
         <EmptyState
           icon="alert-circle-outline"
-          title="Sighting Not Found"
-          message="This sighting record could not be loaded. It may not have been saved yet."
-          actionTitle="Go Back"
+          title={t('sightingNotFound')}
+          message={t('sightingNotFoundBody')}
+          actionTitle={t('goBack')}
           onAction={handleRetry}
         />
       </View>
@@ -775,7 +820,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
             <View style={styles.mockBanner}>
               <Ionicons name="flask-outline" size={12} color={colors.warning} />
               <Text style={styles.mockBannerText}>
-                Mock Detection — real AI recognition not connected yet
+                {t('mockDetectionNotice')}
               </Text>
             </View>
           )}
@@ -801,7 +846,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
           <View style={styles.actions} pointerEvents={isRevealed ? 'auto' : 'none'}>
             {/* Record is already persisted by the pipeline — go straight to collection. */}
             <Button
-              title="View Collection"
+              title={t('viewCollection')}
               onPress={handleGoCollection}
               variant="primary"
               size="lg"
@@ -809,7 +854,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
               fullWidth
             />
             <Button
-              title="Capture Another"
+              title={t('captureAnother')}
               onPress={handleRetry}
               variant="ghost"
               size="lg"

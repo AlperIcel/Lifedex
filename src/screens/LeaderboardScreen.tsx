@@ -21,12 +21,50 @@ import type { LeaderboardEntry } from '@/screens/leaderboard/mockData';
 import { loadLeaderboard, type LeaderboardResult } from '@/lib/leaderboard';
 import { Chip, EmptyState, LoadingState, ScreenContainer } from '@/components';
 import { haptics } from '@/utils/haptics';
+import { useT } from '@/i18n';
 
 /* ------------------------------------------------------------------ */
 /* Screen prop type                                                     */
 /* ------------------------------------------------------------------ */
 
 type Props = BottomTabScreenProps<RootTabParamList, 'Leaderboard'>;
+
+const C = {
+  en: {
+    title: 'Leaderboard',
+    loading: 'Loading rankings...',
+    emptyTitle: 'No rankings yet',
+    emptyMessage: 'Check back soon — the leaderboard fills in as explorers log sightings.',
+    sourceCommunity: 'Community',
+    sourceSimulated: 'Simulated',
+    simNote:
+      'Example players — not real people. Real rankings appear once a community backend is connected.',
+    sectionRanking: 'Ranking',
+    youSuffix: '  (You)',
+    found: '{n} found',
+    yourRank: 'Your rank',
+    tabGlobal: 'Global',
+    tabWeekly: 'Weekly',
+    tabLocal: 'Local',
+  },
+  de: {
+    title: 'Bestenliste',
+    loading: 'Rangliste wird geladen...',
+    emptyTitle: 'Noch keine Ränge',
+    emptyMessage: 'Schau bald wieder vorbei – die Bestenliste füllt sich, sobald Entdecker ihre Funde eintragen.',
+    sourceCommunity: 'Community',
+    sourceSimulated: 'Simuliert',
+    simNote:
+      'Beispiel-Spieler – keine echten Personen. Echte Ränge erscheinen, sobald ein Community-Backend verbunden ist.',
+    sectionRanking: 'Rangliste',
+    youSuffix: '  (Du)',
+    found: '{n} gefunden',
+    yourRank: 'Dein Rang',
+    tabGlobal: 'Global',
+    tabWeekly: 'Wöchentlich',
+    tabLocal: 'Lokal',
+  },
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Medal colors (semantic — not part of the shared theme palette)      */
@@ -175,6 +213,7 @@ function Podium({ entries }: { entries: LeaderboardEntry[] }) {
 /* ------------------------------------------------------------------ */
 
 function LeaderRow({ entry, isCurrentUser }: { entry: LeaderboardEntry; isCurrentUser: boolean }) {
+  const t = useT(C);
   return (
     <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowSelf]}>
       <View style={styles.rankCell}>
@@ -186,9 +225,9 @@ function LeaderRow({ entry, isCurrentUser }: { entry: LeaderboardEntry; isCurren
       <View style={styles.leaderNameBlock}>
         <Text style={[styles.leaderUsername, isCurrentUser && styles.leaderUsernameSelf]} numberOfLines={1}>
           {entry.username}
-          {isCurrentUser ? '  (You)' : ''}
+          {isCurrentUser ? t('youSuffix') : ''}
         </Text>
-        <Text style={styles.leaderFootnote}>{entry.sightings} found</Text>
+        <Text style={styles.leaderFootnote}>{t('found', { n: entry.sightings })}</Text>
       </View>
 
       <Text style={styles.leaderXp}>{xpLabel(entry.xp)}</Text>
@@ -202,8 +241,14 @@ function LeaderRow({ entry, isCurrentUser }: { entry: LeaderboardEntry; isCurren
 
 type FilterTab = 'Global' | 'Weekly' | 'Local';
 const FILTER_TABS: FilterTab[] = ['Global', 'Weekly', 'Local'];
+const TAB_LABEL_KEY: Record<FilterTab, 'tabGlobal' | 'tabWeekly' | 'tabLocal'> = {
+  Global: 'tabGlobal',
+  Weekly: 'tabWeekly',
+  Local: 'tabLocal',
+};
 
 function SegmentedControl({ active, onSelect }: { active: FilterTab; onSelect: (t: FilterTab) => void }) {
+  const t = useT(C);
   return (
     <View style={styles.segmentRow}>
       {FILTER_TABS.map((tab) => (
@@ -213,7 +258,9 @@ function SegmentedControl({ active, onSelect }: { active: FilterTab; onSelect: (
           onPress={() => onSelect(tab)}
           activeOpacity={0.75}
         >
-          <Text style={[styles.segmentText, active === tab && styles.segmentTextActive]}>{tab}</Text>
+          <Text style={[styles.segmentText, active === tab && styles.segmentTextActive]}>
+            {t(TAB_LABEL_KEY[tab])}
+          </Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -225,6 +272,7 @@ function SegmentedControl({ active, onSelect }: { active: FilterTab; onSelect: (
 /* ------------------------------------------------------------------ */
 
 export default function LeaderboardScreen(_props: Props) {
+  const t = useT(C);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('Global');
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<LeaderboardResult | null>(null);
@@ -263,16 +311,16 @@ export default function LeaderboardScreen(_props: Props) {
 
   if (loading) {
     return (
-      <ScreenContainer title="Leaderboard" largeTitle>
-        <LoadingState label="Loading rankings..." />
+      <ScreenContainer title={t('title')} largeTitle>
+        <LoadingState label={t('loading')} />
       </ScreenContainer>
     );
   }
 
   if (entries.length === 0) {
     return (
-      <ScreenContainer title="Leaderboard" largeTitle>
-        <EmptyState icon="podium-outline" title="No rankings yet" message="Check back soon — the leaderboard fills in as explorers log sightings." />
+      <ScreenContainer title={t('title')} largeTitle>
+        <EmptyState icon="podium-outline" title={t('emptyTitle')} message={t('emptyMessage')} />
       </ScreenContainer>
     );
   }
@@ -282,13 +330,13 @@ export default function LeaderboardScreen(_props: Props) {
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <ScreenContainer
-        title="Leaderboard"
+        title={t('title')}
         largeTitle
         scrollable
         padBottom
         rightAccessory={
           <Chip
-            label={source === 'community' ? 'Community' : 'Simulated'}
+            label={source === 'community' ? t('sourceCommunity') : t('sourceSimulated')}
             selected={source === 'community'}
             onPress={() => {}}
             icon={source === 'community' ? 'people' : 'flask-outline'}
@@ -300,17 +348,14 @@ export default function LeaderboardScreen(_props: Props) {
         {source === 'simulated' && (
           <View style={styles.simNote}>
             <Ionicons name="flask-outline" size={15} color={colors.textMuted} style={styles.simNoteIcon} />
-            <Text style={styles.simNoteText}>
-              Example players — not real people. Real rankings appear once a community
-              backend is connected.
-            </Text>
+            <Text style={styles.simNoteText}>{t('simNote')}</Text>
           </View>
         )}
 
         <Podium entries={podiumEntries} />
 
         <View style={styles.divider} />
-        <Text style={styles.sectionLabel}>Ranking</Text>
+        <Text style={styles.sectionLabel}>{t('sectionRanking')}</Text>
 
         <View>
           {listEntries.map((entry) => (
@@ -322,7 +367,7 @@ export default function LeaderboardScreen(_props: Props) {
       {currentUserEntry !== undefined && (
         <View style={styles.yourRankBar}>
           <View style={styles.yourRankLeft}>
-            <Text style={styles.yourRankLabel}>Your rank</Text>
+            <Text style={styles.yourRankLabel}>{t('yourRank')}</Text>
             <Text style={styles.yourRankNumber}>#{currentUserEntry.rank}</Text>
           </View>
 
@@ -330,7 +375,7 @@ export default function LeaderboardScreen(_props: Props) {
 
           <View style={styles.yourRankRight}>
             <Text style={styles.yourRankXp}>{xpLabel(currentUserEntry.xp)} XP</Text>
-            <Text style={styles.yourRankSightings}>{currentUserEntry.sightings} found</Text>
+            <Text style={styles.yourRankSightings}>{t('found', { n: currentUserEntry.sightings })}</Text>
           </View>
         </View>
       )}

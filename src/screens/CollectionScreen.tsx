@@ -46,6 +46,7 @@ import type { CollectionCard } from '@/store/useLifeDexStore';
 import { Chip, EmptyState, MockCardImage, RarityBadge, ScreenContainer } from '@/components';
 import { haptics } from '@/utils/haptics';
 import { TOTAL_SPECIES_COUNT } from '@/constants/species';
+import { useT, useCommon } from '@/i18n';
 
 /* ------------------------------------------------------------------ */
 /* Types & constants                                                    */
@@ -70,23 +71,72 @@ type GridItem =
 const RARITY_FILTERS: RarityFilter[] = ['all', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
 const CATEGORY_FILTERS: CategoryFilter[] = ['all', 'animal', 'plant', 'tree', 'mushroom'];
 
-const RARITY_LABELS: Record<RarityFilter, string> = {
-  all: 'All',
-  common: 'Common',
-  uncommon: 'Uncommon',
-  rare: 'Rare',
-  epic: 'Epic',
-  legendary: 'Legendary',
-};
+/* ------------------------------------------------------------------ */
+/* i18n catalog                                                        */
+/* ------------------------------------------------------------------ */
 
-const CATEGORY_LABELS: Record<CategoryFilter, string> = {
-  all: 'All',
-  animal: 'Animals',
-  plant: 'Plants',
-  tree: 'Trees',
-  mushroom: 'Fungi',
-  unknown: 'Unknown',
-};
+const C = {
+  en: {
+    title: 'Collection',
+    completion: '{discovered} of {total} species',
+    all: 'All',
+    filterAnimals: 'Animals',
+    filterPlants: 'Plants',
+    filterTrees: 'Trees',
+    filterFungi: 'Fungi',
+    filterUnknown: 'Unknown',
+    emptyCollectionTitle: 'Your LifeDex is empty',
+    emptyCollectionMessage:
+      'Head outside and capture your first wild species to start the collection.',
+    openCamera: 'Open camera',
+    emptyFilteredTitle: 'Nothing here yet',
+    emptyFilteredMessage: 'No cards match the current filters.',
+    clearFilters: 'Clear filters',
+  },
+  de: {
+    title: 'Sammlung',
+    completion: '{discovered} von {total} Arten',
+    all: 'Alle',
+    filterAnimals: 'Tiere',
+    filterPlants: 'Pflanzen',
+    filterTrees: 'Bäume',
+    filterFungi: 'Pilze',
+    filterUnknown: 'Unbekannt',
+    emptyCollectionTitle: 'Dein LifeDex ist leer',
+    emptyCollectionMessage:
+      'Geh nach draußen und erfasse deine erste wilde Art, um die Sammlung zu starten.',
+    openCamera: 'Kamera öffnen',
+    emptyFilteredTitle: 'Noch nichts hier',
+    emptyFilteredMessage: 'Keine Karten passen zu den aktuellen Filtern.',
+    clearFilters: 'Filter zurücksetzen',
+  },
+} as const;
+
+/** Bound-translator type, used by the module-level chip-label helper below. */
+type TFunc = ReturnType<typeof useT<typeof C>>;
+
+/**
+ * Category filter-chip labels are their own plural set ("Animals", "Fungi", …),
+ * distinct from the singular useCommon().category() labels used elsewhere
+ * (e.g. the CardDetail stats row shows "Animal"). Rarity chips reuse
+ * useCommon().rarity() directly since the wording is identical.
+ */
+function categoryChipLabel(t: TFunc, value: CategoryFilter): string {
+  switch (value) {
+    case 'all':
+      return t('all');
+    case 'animal':
+      return t('filterAnimals');
+    case 'plant':
+      return t('filterPlants');
+    case 'tree':
+      return t('filterTrees');
+    case 'mushroom':
+      return t('filterFungi');
+    case 'unknown':
+      return t('filterUnknown');
+  }
+}
 
 /** Grid gutter between tiles. */
 const GRID_GAP = spacing.sm + 4;
@@ -103,6 +153,8 @@ const STAGGER_STEP_MS = 40;
 export function CollectionScreen(): React.JSX.Element {
   const navigation = useNavigation<CollectionNav>();
   const store = useLifeDexStore();
+  const t = useT(C);
+  const common = useCommon();
 
   const collectionCards: CollectionCard[] = store.collectionCards;
   const level = store.profile.level;
@@ -199,17 +251,17 @@ export function CollectionScreen(): React.JSX.Element {
     allRows.length === 0 ? (
       <EmptyState
         icon="leaf-outline"
-        title="Your LifeDex is empty"
-        message="Head outside and capture your first wild species to start the collection."
-        actionTitle="Open camera"
+        title={t('emptyCollectionTitle')}
+        message={t('emptyCollectionMessage')}
+        actionTitle={t('openCamera')}
         onAction={handleOpenCamera}
       />
     ) : (
       <EmptyState
         icon="search-outline"
-        title="Nothing here yet"
-        message="No cards match the current filters."
-        actionTitle="Clear filters"
+        title={t('emptyFilteredTitle')}
+        message={t('emptyFilteredMessage')}
+        actionTitle={t('clearFilters')}
         onAction={handleClearFilters}
       />
     );
@@ -220,7 +272,7 @@ export function CollectionScreen(): React.JSX.Element {
 
   return (
     <ScreenContainer
-      title="Collection"
+      title={t('title')}
       largeTitle
       padBottom={false}
       contentStyle={styles.content}
@@ -229,7 +281,7 @@ export function CollectionScreen(): React.JSX.Element {
       {/* ── Completion line + thin accent bar ── */}
       <View style={styles.completionBlock}>
         <Text style={styles.completionText}>
-          {discoveredSpecies} of {TOTAL_SPECIES_COUNT} species
+          {t('completion', { discovered: discoveredSpecies, total: TOTAL_SPECIES_COUNT })}
         </Text>
         <View style={styles.completionTrack}>
           <View
@@ -248,7 +300,7 @@ export function CollectionScreen(): React.JSX.Element {
         {RARITY_FILTERS.map((value) => (
           <Chip
             key={value}
-            label={RARITY_LABELS[value]}
+            label={value === 'all' ? t('all') : common.rarity(value)}
             selected={value === rarityFilter}
             onPress={() => setRarityFilter(value)}
             {...(value !== 'all' ? { dotColor: rarityColors[value] } : {})}
@@ -266,7 +318,7 @@ export function CollectionScreen(): React.JSX.Element {
         {CATEGORY_FILTERS.map((value) => (
           <Chip
             key={value}
-            label={CATEGORY_LABELS[value]}
+            label={categoryChipLabel(t, value)}
             selected={value === categoryFilter}
             onPress={() => setCategoryFilter(value)}
           />
@@ -302,6 +354,7 @@ interface GridTileProps {
 }
 
 function GridTile({ item, index, onPressCard }: GridTileProps): React.JSX.Element {
+  const common = useCommon();
   /* Subtle staggered fade-in for the first tiles only (native driver). */
   const opacity = useRef(new Animated.Value(index < STAGGER_COUNT ? 0 : 1)).current;
 
@@ -337,7 +390,7 @@ function GridTile({ item, index, onPressCard }: GridTileProps): React.JSX.Elemen
       <Pressable
         onPress={() => onPressCard(item.cardId)}
         accessibilityRole="button"
-        accessibilityLabel={`${sighting.commonName}, ${sighting.rarity}`}
+        accessibilityLabel={`${sighting.commonName}, ${common.rarity(sighting.rarity)}`}
         style={({ pressed }) => [
           styles.tile,
           isHighTier && { borderWidth: 1, borderColor: rarityColors[sighting.rarity] },

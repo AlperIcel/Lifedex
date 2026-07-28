@@ -44,6 +44,74 @@ import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { Button, Chip } from '@/components';
 import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
 import { haptics } from '@/utils/haptics';
+import { useT } from '@/i18n';
+
+/* ------------------------------------------------------------------ */
+/* i18n                                                                */
+/* ------------------------------------------------------------------ */
+
+const C = {
+  en: {
+    framingHint: 'Frame the creature or plant clearly',
+    identifying: 'Identifying species…',
+    photoBlocked: 'Photo blocked',
+    blockedDefaultReason: 'This photo cannot be processed due to content policy.',
+    tryAnotherPhoto: 'Try another photo',
+    alreadyFoundNearby: 'Already found nearby',
+    duplicateBody:
+      "You've already discovered {species} in this area (within ~1 km). Move on and explore — find it somewhere new, or catch a different species, to earn XP!",
+    viewCollection: 'View Collection',
+    keepExploring: 'Keep exploring',
+    somethingWentWrong: 'Something went wrong',
+    unexpectedError: 'An unexpected error occurred.',
+    failedToTakePhoto: 'Failed to take photo.',
+    tryAgain: 'Try again',
+    mockNotice: 'Simulated result — real AI recognition not connected yet',
+    mockAuto: 'Auto',
+    mockCat: 'Cat',
+    mockDog: 'Dog',
+    mockFrog: 'Frog',
+    mockBird: 'Bird',
+    mockTree: 'Tree',
+    mockFlower: 'Flower',
+    mockMushroom: 'Mushroom',
+    cameraAccessNeeded: 'Camera access needed',
+    cameraAccessBody:
+      'LifeDex uses your camera to identify animals, plants, trees and mushrooms. Your photos are private evidence — only an AI-recreated card is shared.',
+    grantCameraAccess: 'Grant Camera Access',
+    capturePhotoA11y: 'Capture photo',
+  },
+  de: {
+    framingHint: 'Tier oder Pflanze klar im Bild einrahmen',
+    identifying: 'Art wird bestimmt…',
+    photoBlocked: 'Foto blockiert',
+    blockedDefaultReason: 'Dieses Foto kann aus Richtliniengründen nicht verarbeitet werden.',
+    tryAnotherPhoto: 'Anderes Foto versuchen',
+    alreadyFoundNearby: 'In der Nähe schon gefunden',
+    duplicateBody:
+      'Du hast {species} in diesem Gebiet (ca. 1 km) schon entdeckt. Geh weiter und erkunde — finde die Art woanders oder eine neue Art, um XP zu verdienen!',
+    viewCollection: 'Sammlung ansehen',
+    keepExploring: 'Weiter erkunden',
+    somethingWentWrong: 'Etwas ist schiefgelaufen',
+    unexpectedError: 'Ein unerwarteter Fehler ist aufgetreten.',
+    failedToTakePhoto: 'Foto konnte nicht aufgenommen werden.',
+    tryAgain: 'Nochmal versuchen',
+    mockNotice: 'Simuliertes Ergebnis — echte KI-Erkennung noch nicht angebunden',
+    mockAuto: 'Automatisch',
+    mockCat: 'Katze',
+    mockDog: 'Hund',
+    mockFrog: 'Frosch',
+    mockBird: 'Vogel',
+    mockTree: 'Baum',
+    mockFlower: 'Blume',
+    mockMushroom: 'Pilz',
+    cameraAccessNeeded: 'Kamerazugriff nötig',
+    cameraAccessBody:
+      'LifeDex nutzt deine Kamera, um Tiere, Pflanzen, Bäume und Pilze zu bestimmen. Deine Fotos sind private Nachweise — geteilt wird nur eine KI-generierte Karte.',
+    grantCameraAccess: 'Kamerazugriff erlauben',
+    capturePhotoA11y: 'Foto aufnehmen',
+  },
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -67,18 +135,11 @@ type PipelineState =
   | { phase: 'error'; message: string };
 
 /* ------------------------------------------------------------------ */
-/* Helpers                                                             */
-/* ------------------------------------------------------------------ */
-
-const PHASE_LABELS: Record<string, string> = {
-  running: 'Identifying species…',
-};
-
-/* ------------------------------------------------------------------ */
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
 
 function FramingHint(): React.ReactElement {
+  const t = useT(C);
   return (
     <View style={styles.framingContainer} pointerEvents="none">
       {/* Corner brackets */}
@@ -87,7 +148,7 @@ function FramingHint(): React.ReactElement {
       <View style={[styles.corner, styles.cornerBL]} />
       <View style={[styles.corner, styles.cornerBR]} />
       <View style={styles.framingHintPill}>
-        <Text style={styles.framingHint}>Frame the creature or plant clearly</Text>
+        <Text style={styles.framingHint}>{t('framingHint')}</Text>
       </View>
     </View>
   );
@@ -142,15 +203,15 @@ interface PipelineOverlayProps {
 }
 
 function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlayProps): React.ReactElement | null {
+  const t = useT(C);
   if (state.phase === 'idle') return null;
 
   if (state.phase === 'running') {
-    const label = PHASE_LABELS['running'] ?? 'Processing…';
     return (
       <View style={styles.overlayContainer}>
         <View style={styles.overlayCard}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.overlayTitle}>{label}</Text>
+          <Text style={styles.overlayTitle}>{t('identifying')}</Text>
           <PhaseProgressDots />
         </View>
       </View>
@@ -164,12 +225,12 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
           <View style={[styles.overlayIconWrap, styles.overlayIconWrapDanger]}>
             <Ionicons name="shield-outline" size={32} color={colors.danger} />
           </View>
-          <Text style={styles.overlayTitle}>Photo blocked</Text>
+          <Text style={styles.overlayTitle}>{t('photoBlocked')}</Text>
           <Text style={styles.overlayBody}>
             {state.reasons.join('\n')}
           </Text>
           <Button
-            title="Try another photo"
+            title={t('tryAnotherPhoto')}
             variant="primary"
             onPress={onDismiss}
             fullWidth
@@ -187,19 +248,19 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
           <View style={[styles.overlayIconWrap, styles.overlayIconWrapAccent]}>
             <Ionicons name="checkmark-circle" size={32} color={colors.accent} />
           </View>
-          <Text style={styles.overlayTitle}>Already found nearby</Text>
+          <Text style={styles.overlayTitle}>{t('alreadyFoundNearby')}</Text>
           <Text style={styles.overlayBody}>
-            {`You've already discovered ${state.species} in this area (within ~1 km). Move on and explore — find it somewhere new, or catch a different species, to earn XP!`}
+            {t('duplicateBody', { species: state.species })}
           </Text>
           <Button
-            title="View Collection"
+            title={t('viewCollection')}
             variant="primary"
             onPress={onViewCollection}
             fullWidth
             style={styles.overlayBtnSpacing}
           />
           <Button
-            title="Keep exploring"
+            title={t('keepExploring')}
             variant="ghost"
             onPress={onDismiss}
             fullWidth
@@ -217,10 +278,10 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
           <View style={[styles.overlayIconWrap, styles.overlayIconWrapWarning]}>
             <Ionicons name="alert-circle-outline" size={32} color={colors.warning} />
           </View>
-          <Text style={styles.overlayTitle}>Something went wrong</Text>
+          <Text style={styles.overlayTitle}>{t('somethingWentWrong')}</Text>
           <Text style={styles.overlayBody}>{state.message}</Text>
           <Button
-            title="Try again"
+            title={t('tryAgain')}
             variant="primary"
             onPress={onDismiss}
             fullWidth
@@ -234,15 +295,15 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
   return null;
 }
 
-/* Ionicon + label for each mock test subject (no emoji in chrome). */
-const MOCK_HINT_META: Record<MockHint, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  cat: { icon: 'paw-outline', label: 'Cat' },
-  dog: { icon: 'paw-outline', label: 'Dog' },
-  frog: { icon: 'leaf-outline', label: 'Frog' },
-  bird: { icon: 'egg-outline', label: 'Bird' },
-  tree: { icon: 'trail-sign-outline', label: 'Tree' },
-  flower: { icon: 'flower-outline', label: 'Flower' },
-  mushroom: { icon: 'nutrition-outline', label: 'Mushroom' },
+/* Ionicon + i18n label key for each mock test subject (no emoji in chrome). */
+const MOCK_HINT_META: Record<MockHint, { icon: keyof typeof Ionicons.glyphMap; labelKey: keyof typeof C.en }> = {
+  cat: { icon: 'paw-outline', labelKey: 'mockCat' },
+  dog: { icon: 'paw-outline', labelKey: 'mockDog' },
+  frog: { icon: 'leaf-outline', labelKey: 'mockFrog' },
+  bird: { icon: 'egg-outline', labelKey: 'mockBird' },
+  tree: { icon: 'trail-sign-outline', labelKey: 'mockTree' },
+  flower: { icon: 'flower-outline', labelKey: 'mockFlower' },
+  mushroom: { icon: 'nutrition-outline', labelKey: 'mockMushroom' },
 };
 
 interface MockPickerBarProps {
@@ -256,10 +317,11 @@ interface MockPickerBarProps {
  * hash. Hidden entirely once real AI recognition is wired up (env.isMockAi).
  */
 function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactElement {
+  const t = useT(C);
   return (
     <View style={styles.mockBar} pointerEvents="box-none">
       <Text style={styles.mockBarTitle}>
-        Simulated result — real AI recognition not connected yet
+        {t('mockNotice')}
       </Text>
       <ScrollView
         horizontal
@@ -267,7 +329,7 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
         contentContainerStyle={styles.mockChipRow}
       >
         <Chip
-          label="Auto"
+          label={t('mockAuto')}
           selected={selected === null}
           onPress={() => onSelect(null)}
           icon="shuffle-outline"
@@ -277,7 +339,7 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
           return (
             <Chip
               key={hint}
-              label={meta.label}
+              label={t(meta.labelKey)}
               selected={selected === hint}
               onPress={() => onSelect(hint)}
               icon={meta.icon}
@@ -294,6 +356,7 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
 /* ------------------------------------------------------------------ */
 
 export default function CaptureScreen({ navigation }: Props): React.ReactElement {
+  const t = useT(C);
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -360,7 +423,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
           const reasons =
             result.reasons.length > 0
               ? result.reasons
-              : ['This photo cannot be processed due to content policy.'];
+              : [t('blockedDefaultReason')];
           haptics.error();
           setPipeline({ phase: 'blocked', reasons });
           return;
@@ -382,10 +445,10 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         navigation.navigate('Result', { sightingId: result.sightingId });
       } catch {
         haptics.error();
-        setPipeline({ phase: 'error', message: 'An unexpected error occurred.' });
+        setPipeline({ phase: 'error', message: t('unexpectedError') });
       }
     },
-    [navigation, mockSpecies],
+    [navigation, mockSpecies, t],
   );
 
   /* ---------- Capture ---------- */
@@ -406,9 +469,9 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       }
     } catch {
       haptics.error();
-      setPipeline({ phase: 'error', message: 'Failed to take photo.' });
+      setPipeline({ phase: 'error', message: t('failedToTakePhoto') });
     }
-  }, [captureActive, runPipeline, shutterScale]);
+  }, [captureActive, runPipeline, shutterScale, t]);
 
   /* ---------- Flip ---------- */
   const handleFlip = useCallback(() => {
@@ -440,12 +503,12 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
   if (!permission.granted) {
     return (
       <View style={styles.centeredFill}>
-        <Text style={styles.permTitle}>Camera access needed</Text>
+        <Text style={styles.permTitle}>{t('cameraAccessNeeded')}</Text>
         <Text style={styles.permBody}>
-          LifeDex uses your camera to identify animals, plants, trees and mushrooms. Your photos are private evidence — only an AI-recreated card is shared.
+          {t('cameraAccessBody')}
         </Text>
         <TouchableOpacity style={styles.permBtn} onPress={() => void requestPermission()}>
-          <Text style={styles.permBtnText}>Grant Camera Access</Text>
+          <Text style={styles.permBtnText}>{t('grantCameraAccess')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -513,7 +576,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
             style={[styles.shutter, captureActive && styles.shutterDisabled]}
             onPress={() => void handleCapture()}
             disabled={captureActive}
-            accessibilityLabel="Capture photo"
+            accessibilityLabel={t('capturePhotoA11y')}
           >
             {captureActive ? (
               <View style={styles.shutterInnerActive}>

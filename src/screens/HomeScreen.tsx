@@ -35,6 +35,7 @@ import { RarityBadge } from '@/components/RarityBadge';
 import { SectionHeader } from '@/components/SectionHeader';
 import { XPRing } from '@/components/XPRing';
 import type { Rarity, Sighting } from '@/domain/types';
+import { useT } from '@/i18n';
 import {
   levelBounds,
   selectRecentDiscoveries,
@@ -89,17 +90,72 @@ const CATEGORY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 /* ------------------------------------------------------------------ */
+/* i18n — English values stay byte-identical to the originals          */
+/* (HomeScreen.test.tsx asserts several verbatim); German added        */
+/* alongside. Shared by every component in this file.                  */
+/* ------------------------------------------------------------------ */
+
+const C = {
+  en: {
+    subtitle: 'Track · Collect · Protect',
+    today: 'today',
+    settings: 'Settings',
+    toNextCaption: '{toNext} XP to level {level}',
+    statSpecies: 'Species',
+    statToday: 'Today',
+    statTotalXp: 'Total XP',
+    capture: 'Capture',
+    recentDiscoveries: 'Recent discoveries',
+    noDiscoveriesTitle: 'No discoveries yet',
+    noDiscoveriesMessage: 'Your first catch is waiting outside.',
+    openCamera: 'Open camera',
+    rareNearby: 'Rare nearby',
+    simulated: 'Simulated',
+    nearbyHint: 'These species have been spotted near you. Stay on paths. Do not disturb.',
+    away: '{distance} away',
+    photoOf: 'Photo of {name}',
+    minsAgo: '{mins}m ago',
+    hrsAgo: '{hrs}h ago',
+    daysAgo: '{days}d ago',
+  },
+  de: {
+    subtitle: 'Erfassen · Sammeln · Schützen',
+    today: 'heute',
+    settings: 'Einstellungen',
+    toNextCaption: '{toNext} XP bis Level {level}',
+    statSpecies: 'Arten',
+    statToday: 'Heute',
+    statTotalXp: 'Gesamt-XP',
+    capture: 'Fangen',
+    recentDiscoveries: 'Neueste Entdeckungen',
+    noDiscoveriesTitle: 'Noch keine Entdeckungen',
+    noDiscoveriesMessage: 'Dein erster Fang wartet draußen.',
+    openCamera: 'Kamera öffnen',
+    rareNearby: 'Selten in der Nähe',
+    simulated: 'Simuliert',
+    nearbyHint: 'Diese Arten wurden in deiner Nähe gesichtet. Bleib auf den Wegen. Nicht stören.',
+    away: '{distance} entfernt',
+    photoOf: 'Foto von {name}',
+    minsAgo: 'vor {mins}m',
+    hrsAgo: 'vor {hrs}h',
+    daysAgo: 'vor {days}d',
+  },
+} as const;
+
+type TFunc = (key: keyof typeof C.en, vars?: Record<string, string | number>) => string;
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
 
-function relativeTime(isoString: string): string {
+function relativeTime(isoString: string, t: TFunc): string {
   const diffMs = Date.now() - new Date(isoString).getTime();
   const mins = Math.floor(diffMs / 60_000);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return t('minsAgo', { mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('hrsAgo', { hrs });
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t('daysAgo', { days });
 }
 
 function formatDistance(meters: number): string {
@@ -113,6 +169,7 @@ function formatDistance(meters: number): string {
 
 /** Single card in the Recent Discoveries horizontal carousel. */
 function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () => void }) {
+  const t = useT(C);
   const rarityColor = rarityColors[sighting.rarity];
   const icon = CATEGORY_ICON[sighting.category] ?? 'help-outline';
 
@@ -131,7 +188,7 @@ function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () 
             source={{ uri: sighting.publicImageUri }}
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
-            accessibilityLabel={`Photo of ${sighting.commonName}`}
+            accessibilityLabel={t('photoOf', { name: sighting.commonName })}
           />
         ) : (
           <Ionicons name={icon} size={44} color={rarityColor} />
@@ -155,7 +212,7 @@ function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () 
         ) : null}
         <View style={styles.cardMeta}>
           <RarityBadge rarity={sighting.rarity} size="sm" />
-          <Text style={styles.cardTime}>{relativeTime(sighting.createdAt)}</Text>
+          <Text style={styles.cardTime}>{relativeTime(sighting.createdAt, t)}</Text>
         </View>
       </View>
     </Pressable>
@@ -164,6 +221,7 @@ function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () 
 
 /** Single row in the Rare Nearby list. */
 function NearbyRareRow({ hint, onPress }: { hint: NearbyRareHint; onPress: () => void }) {
+  const t = useT(C);
   const rarityColor = rarityColors[hint.rarity];
   const icon = CATEGORY_ICON[hint.category] ?? 'help-outline';
 
@@ -186,7 +244,9 @@ function NearbyRareRow({ hint, onPress }: { hint: NearbyRareHint; onPress: () =>
         ) : null}
         <View style={styles.nearbyMeta}>
           <RarityBadge rarity={hint.rarity} size="sm" />
-          <Text style={styles.nearbyDistance}>{formatDistance(hint.distanceMeters)} away</Text>
+          <Text style={styles.nearbyDistance}>
+            {t('away', { distance: formatDistance(hint.distanceMeters) })}
+          </Text>
         </View>
       </View>
 
@@ -208,9 +268,10 @@ function StatCell({ value, label, accent }: { value: string; label: string; acce
 
 /** "Simulated" chip shown next to fabricated section headers. */
 function SimulatedChip() {
+  const t = useT(C);
   return (
     <View style={styles.simulatedChip}>
-      <Text style={styles.simulatedChipText}>Simulated</Text>
+      <Text style={styles.simulatedChipText}>{t('simulated')}</Text>
     </View>
   );
 }
@@ -223,6 +284,7 @@ type HomeNavProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function HomeScreen(): React.JSX.Element {
   const navigation = useNavigation<HomeNavProp>();
+  const t = useT(C);
   const state = useLifeDexStore();
 
   const { profile } = state;
@@ -264,19 +326,19 @@ export function HomeScreen(): React.JSX.Element {
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.wordmark}>LifeDex</Text>
-            <Text style={styles.subtitle}>Track · Collect · Protect</Text>
+            <Text style={styles.subtitle}>{t('subtitle')}</Text>
           </View>
 
           <View style={styles.headerActions}>
             <View style={styles.todayPill}>
               <Text style={styles.todayCount}>{todayCount}</Text>
-              <Text style={styles.todayLabel}>today</Text>
+              <Text style={styles.todayLabel}>{t('today')}</Text>
             </View>
             <Pressable
               onPress={handleSettingsPress}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Settings"
+              accessibilityLabel={t('settings')}
               style={({ pressed }) => [styles.gearButton, pressed && styles.gearButtonPressed]}
             >
               <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
@@ -296,22 +358,22 @@ export function HomeScreen(): React.JSX.Element {
               strokeWidth={13}
             />
             <Text style={styles.toNextCaption}>
-              {lb.toNext.toLocaleString()} XP to level {lb.level + 1}
+              {t('toNextCaption', { toNext: lb.toNext.toLocaleString(), level: lb.level + 1 })}
             </Text>
           </View>
 
           {/* Stat cells — borderless, hairline separated */}
           <View style={styles.statsRow}>
-            <StatCell value={String(totalSpecies)} label="Species" />
+            <StatCell value={String(totalSpecies)} label={t('statSpecies')} />
             <View style={styles.statDivider} />
-            <StatCell value={String(todayCount)} label="Today" />
+            <StatCell value={String(todayCount)} label={t('statToday')} />
             <View style={styles.statDivider} />
-            <StatCell value={profile.xp.toLocaleString()} label="Total XP" accent={colors.accent} />
+            <StatCell value={profile.xp.toLocaleString()} label={t('statTotalXp')} accent={colors.accent} />
           </View>
 
           {/* Capture CTA */}
           <Button
-            title="Capture"
+            title={t('capture')}
             variant="primary"
             size="lg"
             icon="camera"
@@ -324,7 +386,7 @@ export function HomeScreen(): React.JSX.Element {
         {/* ── Recent Discoveries carousel ─────────────────── */}
         <View style={styles.section}>
           <SectionHeader
-            title="Recent discoveries"
+            title={t('recentDiscoveries')}
             accessory={<Text style={styles.sectionCount}>{recentSightings.length}</Text>}
           />
 
@@ -345,9 +407,9 @@ export function HomeScreen(): React.JSX.Element {
           ) : (
             <EmptyState
               icon="leaf-outline"
-              title="No discoveries yet"
-              message="Your first catch is waiting outside."
-              actionTitle="Open camera"
+              title={t('noDiscoveriesTitle')}
+              message={t('noDiscoveriesMessage')}
+              actionTitle={t('openCamera')}
               onAction={handleCapturePress}
             />
           )}
@@ -356,10 +418,8 @@ export function HomeScreen(): React.JSX.Element {
         {/* ── Rare Nearby teaser (mock-only — fabricated data) ────── */}
         {env.isMockAi && MOCK_NEARBY_RARE.length > 0 && (
           <View style={styles.section}>
-            <SectionHeader title="Rare nearby" accessory={<SimulatedChip />} />
-            <Text style={styles.nearbyHint}>
-              These species have been spotted near you. Stay on paths. Do not disturb.
-            </Text>
+            <SectionHeader title={t('rareNearby')} accessory={<SimulatedChip />} />
+            <Text style={styles.nearbyHint}>{t('nearbyHint')}</Text>
             <View style={styles.nearbyList}>
               {MOCK_NEARBY_RARE.map((hint) => (
                 <NearbyRareRow

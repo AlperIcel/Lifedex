@@ -24,6 +24,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import { haptics } from '@/utils/haptics';
+import { useT } from '@/i18n';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 // MapScreen is a default export
@@ -70,13 +71,43 @@ const TAB_ICONS: Record<TabIconName, { active: IoniconName; inactive: IoniconNam
   Leaderboard: { active: 'podium', inactive: 'podium-outline' },
 };
 
-const TAB_LABELS: Record<TabIconName, string> = {
-  Home: 'Home',
-  Map: 'Map',
-  Capture: 'Capture',
-  Collection: 'Collection',
-  Leaderboard: 'Ranks',
-};
+/** Tab labels — English exact (kept for visual parity); German added
+ * alongside. Looked up reactively via useT so the tab bar re-renders
+ * instantly on a language switch. */
+const TAB_LABELS = {
+  en: {
+    Home: 'Home',
+    Map: 'Map',
+    Capture: 'Capture',
+    Collection: 'Collection',
+    Leaderboard: 'Ranks',
+  },
+  de: {
+    Home: 'Start',
+    Map: 'Karte',
+    Capture: 'Fangen',
+    Collection: 'Sammlung',
+    Leaderboard: 'Ränge',
+  },
+} as const;
+
+/** Screen-reader labels for the tab bar buttons (same reactive pattern). */
+const TAB_A11Y = {
+  en: {
+    home: 'Home feed',
+    map: 'Sightings map',
+    capture: 'Capture a species',
+    collection: 'My collection',
+    leaderboard: 'Leaderboard',
+  },
+  de: {
+    home: 'Start-Feed',
+    map: 'Sichtungskarte',
+    capture: 'Art fangen',
+    collection: 'Meine Sammlung',
+    leaderboard: 'Rangliste',
+  },
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Custom tab bar                                                       */
@@ -89,8 +120,9 @@ interface TabBarIconProps {
 }
 
 function TabBarIcon({ name, focused, isCenterCapture = false }: TabBarIconProps) {
+  const t = useT(TAB_LABELS);
   const icon = focused ? TAB_ICONS[name].active : TAB_ICONS[name].inactive;
-  const label = TAB_LABELS[name];
+  const label = t(name);
 
   // Fade the label in only when focused (Apple-restrained tab bar).
   const labelOpacity = React.useRef(new Animated.Value(focused ? 1 : 0)).current;
@@ -138,6 +170,7 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 
 /** Bottom-tab navigator housing the five main screens. */
 function TabNavigator() {
+  const ta11y = useT(TAB_A11Y);
   return (
     <Tab.Navigator
       screenOptions={{
@@ -158,7 +191,7 @@ function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Home" focused={focused} />
           ),
-          tabBarAccessibilityLabel: 'Home feed',
+          tabBarAccessibilityLabel: ta11y('home'),
         }}
       />
 
@@ -169,7 +202,7 @@ function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Map" focused={focused} />
           ),
-          tabBarAccessibilityLabel: 'Sightings map',
+          tabBarAccessibilityLabel: ta11y('map'),
         }}
       />
 
@@ -180,7 +213,7 @@ function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Capture" focused={focused} isCenterCapture />
           ),
-          tabBarAccessibilityLabel: 'Capture a species',
+          tabBarAccessibilityLabel: ta11y('capture'),
           // Slightly wider hit target for the FAB
           tabBarButton: (props) => (
             <Pressable
@@ -209,7 +242,7 @@ function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Collection" focused={focused} />
           ),
-          tabBarAccessibilityLabel: 'My collection',
+          tabBarAccessibilityLabel: ta11y('collection'),
         }}
       />
 
@@ -219,7 +252,7 @@ function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Leaderboard" focused={focused} />
           ),
-          tabBarAccessibilityLabel: 'Leaderboard',
+          tabBarAccessibilityLabel: ta11y('leaderboard'),
         }}
       >
         {(props) => (

@@ -7,14 +7,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { Rarity } from '@/domain/types';
 import { rarityColors, rarityTints, spacing, radius, typography } from '@/theme/theme';
-
-const LABELS: Record<Rarity, string> = {
-  common: 'COMMON',
-  uncommon: 'UNCOMMON',
-  rare: 'RARE',
-  epic: 'EPIC',
-  legendary: 'LEGENDARY',
-};
+import { useCommon } from '@/i18n';
 
 interface Props {
   rarity: Rarity;
@@ -23,6 +16,7 @@ interface Props {
 }
 
 export function RarityBadge({ rarity, size = 'md' }: Props): React.JSX.Element {
+  const common = useCommon();
   const color = rarityColors[rarity];
   const isSm = size === 'sm';
   const bordered = rarity === 'epic' || rarity === 'legendary';
@@ -45,7 +39,7 @@ export function RarityBadge({ rarity, size = 'md' }: Props): React.JSX.Element {
         ]}
         numberOfLines={1}
       >
-        {LABELS[rarity]}
+        {common.rarity(rarity).toUpperCase()}
       </Text>
     </View>
   );

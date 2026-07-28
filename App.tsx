@@ -24,6 +24,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { lifeDexStore } from './src/store/useLifeDexStore';
 import { ensureAnonSession } from './src/lib/community';
 import { isOnboarded } from './src/lib/onboarding';
+import { hydrateLang } from './src/i18n';
 
 /**
  * Navigation theme that matches the LifeDex dark-nature palette.
@@ -47,6 +48,9 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     void lifeDexStore.hydrate();
+    // Load the saved language (or lock in the device default) — no flash: the
+    // first paint already uses the device-derived default.
+    void hydrateLang();
     // Best-effort anonymous sign-in for the community layer (no-op if disabled).
     void ensureAnonSession();
     void isOnboarded().then(setOnboardedState);

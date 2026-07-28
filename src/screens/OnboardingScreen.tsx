@@ -25,6 +25,7 @@ import type { RootStackParamList } from '@/navigation/types';
 import { colors, spacing, radius, typography, motion } from '@/theme/theme';
 import { setOnboarded } from '@/lib/onboarding';
 import { Button } from '@/components';
+import { useT } from '@/i18n';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -44,47 +45,68 @@ interface Step {
 
 // ─── content ─────────────────────────────────────────────────────────────────
 
-const STEPS: Step[] = [
-  {
-    id: 'respect',
-    icon: 'paw-outline',
-    accentColor: colors.success,      // moss green
-    badge: 'RULE 01',
-    title: 'Respect the Wild',
-    subtitle: 'Every creature deserves space.',
-    rules: [
-      { icon: 'egg-outline', text: 'Never disturb nests, dens, or young animals.' },
-      { icon: 'volume-mute-outline', text: 'Observe silently — no sudden moves or noise.' },
-      { icon: 'camera-outline', text: 'Photograph from a safe distance. Zoom in, stay back.' },
-    ],
+const C = {
+  en: {
+    skipA11y: 'Skip onboarding',
+    skip: 'Skip',
+    fieldGuide: 'FIELD GUIDE',
+    heroLine1: 'Discover. Collect.',
+    heroLine2: 'Protect.',
+    heroCaption: 'A few rules before you head into the wild.',
+    badge1: 'RULE 01',
+    title1: 'Respect the Wild',
+    subtitle1: 'Every creature deserves space.',
+    rule1a: 'Never disturb nests, dens, or young animals.',
+    rule1b: 'Observe silently — no sudden moves or noise.',
+    rule1c: 'Photograph from a safe distance. Zoom in, stay back.',
+    badge2: 'RULE 02',
+    title2: 'Honor Boundaries',
+    subtitle2: 'Discovery never justifies trespass.',
+    rule2a: 'Stay on public land and marked trails.',
+    rule2b: 'Private property = off-limits, always.',
+    rule2c: 'Do not collect, uproot, or damage plants.',
+    badge3: 'RULE 03',
+    title3: 'Protect the Rare',
+    subtitle3: 'Some locations must stay secret.',
+    rule3a: 'Exact GPS of protected species is never shared publicly.',
+    rule3b: 'Rare & endangered sightings get extra location fuzz.',
+    rule3c: 'Your original photo stays private — only AI cards go public.',
+    continueBtn: 'Continue',
+    startExploring: 'Start exploring',
+    privacyFootnote: 'Your data stays on this device',
+    progress: '{current} of {total}',
   },
-  {
-    id: 'boundaries',
-    icon: 'trail-sign-outline',
-    accentColor: colors.teal,
-    badge: 'RULE 02',
-    title: 'Honor Boundaries',
-    subtitle: 'Discovery never justifies trespass.',
-    rules: [
-      { icon: 'walk-outline', text: 'Stay on public land and marked trails.' },
-      { icon: 'home-outline', text: 'Private property = off-limits, always.' },
-      { icon: 'leaf-outline', text: 'Do not collect, uproot, or damage plants.' },
-    ],
+  de: {
+    skipA11y: 'Onboarding überspringen',
+    skip: 'Überspringen',
+    fieldGuide: 'FELDFÜHRER',
+    heroLine1: 'Entdecken. Sammeln.',
+    heroLine2: 'Schützen.',
+    heroCaption: 'Ein paar Regeln, bevor du in die Wildnis aufbrichst.',
+    badge1: 'REGEL 01',
+    title1: 'Respektiere die Wildnis',
+    subtitle1: 'Jedes Lebewesen verdient Abstand.',
+    rule1a: 'Stör niemals Nester, Bauten oder Jungtiere.',
+    rule1b: 'Beobachte still — keine hektischen Bewegungen, kein Lärm.',
+    rule1c: 'Fotografiere aus sicherer Distanz. Zoome ran, bleib auf Abstand.',
+    badge2: 'REGEL 02',
+    title2: 'Halte dich an Grenzen',
+    subtitle2: 'Entdecken rechtfertigt kein unbefugtes Betreten.',
+    rule2a: 'Bleib auf öffentlichem Grund und markierten Wegen.',
+    rule2b: 'Privatgrundstücke sind immer tabu.',
+    rule2c: 'Sammle, entwurzle oder beschädige keine Pflanzen.',
+    badge3: 'REGEL 03',
+    title3: 'Schütze das Seltene',
+    subtitle3: 'Manche Orte müssen geheim bleiben.',
+    rule3a: 'Der genaue Standort geschützter Arten wird nie öffentlich geteilt.',
+    rule3b: 'Seltene & gefährdete Sichtungen bekommen zusätzliche Standort-Unschärfe.',
+    rule3c: 'Dein Originalfoto bleibt privat — nur die KI-Karte wird öffentlich.',
+    continueBtn: 'Weiter',
+    startExploring: "Los geht's",
+    privacyFootnote: 'Deine Daten bleiben auf diesem Gerät',
+    progress: '{current} von {total}',
   },
-  {
-    id: 'protect',
-    icon: 'shield-half-outline',
-    accentColor: colors.amber,
-    badge: 'RULE 03',
-    title: 'Protect the Rare',
-    subtitle: 'Some locations must stay secret.',
-    rules: [
-      { icon: 'location-outline', text: 'Exact GPS of protected species is never shared publicly.' },
-      { icon: 'eye-off-outline', text: 'Rare & endangered sightings get extra location fuzz.' },
-      { icon: 'lock-closed-outline', text: 'Your original photo stays private — only AI cards go public.' },
-    ],
-  },
-];
+} as const;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -171,6 +193,48 @@ const Dot = React.memo(({ active, color }: { active: boolean; color: string }) =
 // ─── screen ──────────────────────────────────────────────────────────────────
 
 export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
+  const t = useT(C);
+  const STEPS: Step[] = [
+    {
+      id: 'respect',
+      icon: 'paw-outline',
+      accentColor: colors.success, // moss green
+      badge: t('badge1'),
+      title: t('title1'),
+      subtitle: t('subtitle1'),
+      rules: [
+        { icon: 'egg-outline', text: t('rule1a') },
+        { icon: 'volume-mute-outline', text: t('rule1b') },
+        { icon: 'camera-outline', text: t('rule1c') },
+      ],
+    },
+    {
+      id: 'boundaries',
+      icon: 'trail-sign-outline',
+      accentColor: colors.teal,
+      badge: t('badge2'),
+      title: t('title2'),
+      subtitle: t('subtitle2'),
+      rules: [
+        { icon: 'walk-outline', text: t('rule2a') },
+        { icon: 'home-outline', text: t('rule2b') },
+        { icon: 'leaf-outline', text: t('rule2c') },
+      ],
+    },
+    {
+      id: 'protect',
+      icon: 'shield-half-outline',
+      accentColor: colors.amber,
+      badge: t('badge3'),
+      title: t('title3'),
+      subtitle: t('subtitle3'),
+      rules: [
+        { icon: 'location-outline', text: t('rule3a') },
+        { icon: 'eye-off-outline', text: t('rule3b') },
+        { icon: 'lock-closed-outline', text: t('rule3c') },
+      ],
+    },
+  ];
   const [activeIndex, setActiveIndex] = useState(0);
   const flatRef = useRef<FlatList<Step>>(null);
 
@@ -229,20 +293,22 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
         <Pressable
           onPress={handleSkip}
           style={({ pressed }) => [styles.skipBtn, pressed && { opacity: 0.6 }]}
-          accessibilityLabel="Skip onboarding"
+          accessibilityLabel={t('skipA11y')}
           accessibilityRole="button"
         >
-          <Text style={styles.skipText}>Skip</Text>
+          <Text style={styles.skipText}>{t('skip')}</Text>
         </Pressable>
       </View>
 
       {/* hero headline */}
       <View style={styles.heroSection}>
-        <Text style={styles.heroLabel}>FIELD GUIDE</Text>
-        <Text style={styles.heroTitle}>Discover. Collect.{'\n'}Protect.</Text>
-        <Text style={styles.heroCaption}>
-          A few rules before you head into the wild.
+        <Text style={styles.heroLabel}>{t('fieldGuide')}</Text>
+        <Text style={styles.heroTitle}>
+          {t('heroLine1')}
+          {'\n'}
+          {t('heroLine2')}
         </Text>
+        <Text style={styles.heroCaption}>{t('heroCaption')}</Text>
       </View>
 
       {/* cards pager */}
@@ -277,7 +343,7 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
 
         {/* CTA button */}
         <Button
-          title={isLast ? 'Start exploring' : 'Continue'}
+          title={isLast ? t('startExploring') : t('continueBtn')}
           onPress={handleNext}
           variant="primary"
           size="lg"
@@ -287,13 +353,13 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
         {isLast ? (
           <View style={styles.privacyFootnote}>
             <Ionicons name="lock-closed-outline" size={13} color={colors.textTertiary} />
-            <Text style={styles.privacyFootnoteText}>Your data stays on this device</Text>
+            <Text style={styles.privacyFootnoteText}>{t('privacyFootnote')}</Text>
           </View>
         ) : null}
 
         {/* progress caption */}
         <Text style={styles.progressCaption}>
-          {activeIndex + 1} of {STEPS.length}
+          {t('progress', { current: activeIndex + 1, total: STEPS.length })}
         </Text>
       </View>
     </SafeAreaView>

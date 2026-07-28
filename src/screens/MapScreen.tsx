@@ -43,6 +43,7 @@ import { useLifeDexStore } from '@/store/useLifeDexStore';
 import { env } from '@/config/env';
 import MockMapView, { type ClusteredPin } from '@/components/MockMapView';
 import { ensureAnonSession, fetchCommunitySightings } from '@/lib/community';
+import { useT, useCommon } from '@/i18n';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                            */
@@ -137,14 +138,42 @@ const MAP_STYLE = [
 
 type CategoryFilter = Category | 'all';
 
-const CATEGORY_LABELS: Record<CategoryFilter, string> = {
-  all: 'All',
-  animal: 'Animals',
-  plant: 'Plants',
-  tree: 'Trees',
-  mushroom: 'Fungi',
-  unknown: 'Unknown',
-};
+const C = {
+  en: {
+    catAll: 'All',
+    catAnimal: 'Animals',
+    catPlant: 'Plants',
+    catTree: 'Trees',
+    catMushroom: 'Fungi',
+    catUnknown: 'Unknown',
+    sightingOne: '{n} sighting',
+    sightingOther: '{n} sightings',
+    sightingsHere: '{n} sightings here',
+    sightingFallback: 'Sighting',
+    privacyBadge: '📍 GPS fuzzed · 🔒 Protected locations hidden',
+    exploreTitle: 'Explore the wild',
+    exploreBody: 'Tap a pin or protected zone to see what was discovered there.',
+    protectedNotice: '🔒 Exact location protected — approximate area shown',
+    locationProtected: '🔒 Location protected',
+  },
+  de: {
+    catAll: 'Alle',
+    catAnimal: 'Tiere',
+    catPlant: 'Pflanzen',
+    catTree: 'Bäume',
+    catMushroom: 'Pilze',
+    catUnknown: 'Unbekannt',
+    sightingOne: '{n} Sichtung',
+    sightingOther: '{n} Sichtungen',
+    sightingsHere: '{n} Sichtungen hier',
+    sightingFallback: 'Sichtung',
+    privacyBadge: '📍 GPS verwischt · 🔒 Geschützte Orte verborgen',
+    exploreTitle: 'Erkunde die Wildnis',
+    exploreBody: 'Tippe auf einen Pin oder eine geschützte Zone, um zu sehen, was dort entdeckt wurde.',
+    protectedNotice: '🔒 Genauer Ort geschützt – ungefähre Fläche angezeigt',
+    locationProtected: '🔒 Ort geschützt',
+  },
+} as const;
 
 const CATEGORY_ICONS: Record<CategoryFilter, string> = {
   all: '🌍',
@@ -251,6 +280,7 @@ interface RarityBadgeProps {
   size?: 'sm' | 'md';
 }
 function RarityBadge({ rarity, size = 'md' }: RarityBadgeProps) {
+  const common = useCommon();
   const col = rarityColors[rarity];
   const isSmall = size === 'sm';
   return (
@@ -268,7 +298,7 @@ function RarityBadge({ rarity, size = 'md' }: RarityBadgeProps) {
           isSmall && styles.rarityBadgeTextSm,
         ]}
       >
-        {rarity.toUpperCase()}
+        {common.rarity(rarity).toUpperCase()}
       </Text>
     </View>
   );
@@ -374,6 +404,7 @@ interface SightingRowProps {
   onPress: () => void;
 }
 function SightingRow({ sighting, onPress }: SightingRowProps) {
+  const t = useT(C);
   const col = rarityColors[sighting.rarity];
   const catIcon = CATEGORY_ICONS[sighting.category] ?? '?';
 
@@ -398,7 +429,7 @@ function SightingRow({ sighting, onPress }: SightingRowProps) {
           <RarityBadge rarity={sighting.rarity} size="sm" />
           <Text style={styles.sightingXp}>+{sighting.xp} XP</Text>
           {sighting.publicLocation.hidden && (
-            <Text style={styles.sightingProtected}>🔒 Location protected</Text>
+            <Text style={styles.sightingProtected}>{t('locationProtected')}</Text>
           )}
         </View>
       </View>
@@ -418,6 +449,15 @@ type Props = CompositeScreenProps<
 >;
 
 export default function MapScreen({ navigation }: Props) {
+  const t = useT(C);
+  const categoryLabel: Record<CategoryFilter, string> = {
+    all: t('catAll'),
+    animal: t('catAnimal'),
+    plant: t('catPlant'),
+    tree: t('catTree'),
+    mushroom: t('catMushroom'),
+    unknown: t('catUnknown'),
+  };
   const { sightings: storeSightings } = useLifeDexStore();
 
   // Other users' public sightings (Supabase). Empty when offline/disabled.
@@ -664,7 +704,9 @@ export default function MapScreen({ navigation }: Props) {
         <View style={styles.statsRow}>
           <View style={styles.statsBadge}>
             <Text style={styles.statsText}>
-              {totalShown} sighting{totalShown !== 1 ? 's' : ''}
+              {totalShown === 1
+                ? t('sightingOne', { n: totalShown })
+                : t('sightingOther', { n: totalShown })}
             </Text>
             {hiddenCount > 0 && (
               <Text style={styles.statsHidden}> · {hiddenCount} 🔒</Text>
@@ -685,7 +727,7 @@ export default function MapScreen({ navigation }: Props) {
           {VISIBLE_FILTERS.map((f) => (
             <Chip
               key={f}
-              label={CATEGORY_LABELS[f]}
+              label={categoryLabel[f]}
               icon={CATEGORY_ICONS[f]}
               active={activeFilter === f}
               onPress={() => handleFilterChange(f)}
@@ -696,7 +738,7 @@ export default function MapScreen({ navigation }: Props) {
 
       {/* ── Privacy badge (bottom-left) ───────────────────────── */}
       <View style={styles.privacyBadge} pointerEvents="none">
-        <Text style={styles.privacyText}>📍 GPS fuzzed · 🔒 Protected locations hidden</Text>
+        <Text style={styles.privacyText}>{t('privacyBadge')}</Text>
       </View>
 
       {/* ── Bottom sheet ─────────────────────────────────────── */}
@@ -713,10 +755,8 @@ export default function MapScreen({ navigation }: Props) {
           /* Empty / idle state */
           <View style={styles.sheetEmpty}>
             <Text style={styles.sheetEmptyIcon}>🌿</Text>
-            <Text style={styles.sheetEmptyTitle}>Explore the wild</Text>
-            <Text style={styles.sheetEmptyBody}>
-              Tap a pin or protected zone to see what was discovered there.
-            </Text>
+            <Text style={styles.sheetEmptyTitle}>{t('exploreTitle')}</Text>
+            <Text style={styles.sheetEmptyBody}>{t('exploreBody')}</Text>
           </View>
         ) : (
           <>
@@ -724,8 +764,8 @@ export default function MapScreen({ navigation }: Props) {
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle} numberOfLines={1}>
                 {sheetSightings.length === 1
-                  ? (sheetSightings[0]?.commonName ?? 'Sighting')
-                  : `${sheetSightings.length} sightings here`}
+                  ? (sheetSightings[0]?.commonName ?? t('sightingFallback'))
+                  : t('sightingsHere', { n: sheetSightings.length })}
               </Text>
               <TouchableOpacity onPress={closeSheet} style={styles.sheetClose}>
                 <Text style={styles.sheetCloseIcon}>✕</Text>
@@ -735,9 +775,7 @@ export default function MapScreen({ navigation }: Props) {
             {/* Protected-species notice */}
             {selectedHiddenSighting != null && (
               <View style={styles.protectedNotice}>
-                <Text style={styles.protectedNoticeText}>
-                  🔒 Exact location protected — approximate area shown
-                </Text>
+                <Text style={styles.protectedNoticeText}>{t('protectedNotice')}</Text>
               </View>
             )}
 

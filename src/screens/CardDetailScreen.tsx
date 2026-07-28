@@ -40,6 +40,7 @@ import { RarityBadge } from '@/components/RarityBadge';
 import type { Rarity, Sighting } from '@/domain/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import { useLore } from '@/lib/lore';
+import { useT, useCommon } from '@/i18n';
 import {
   colors,
   radius,
@@ -58,15 +59,68 @@ import type { RootStackParamList } from '@/navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'CardDetail'>;
 
 /* ------------------------------------------------------------------ */
-/* Helpers                                                             */
+/* i18n catalog                                                        */
 /* ------------------------------------------------------------------ */
 
-const CAPTIVE_LABEL: Record<string, string> = {
-  wild: 'Wild',
-  domestic: 'Domestic',
-  zoo_captive: 'Zoo / Captive',
-  unknown: 'Unknown',
-};
+const C = {
+  en: {
+    cardNotFound: 'Card not found',
+    cardNotFoundBody: 'No data found for this card.',
+    goBack: 'Go back',
+    back: 'Back',
+    shareComingSoon: 'Share (coming soon)',
+    firstDiscoveryTitle: 'First Discovery!',
+    firstDiscoveryBody: "You're the first to find this species. +50 bonus XP awarded.",
+    rarity: 'Rarity',
+    category: 'Category',
+    confidence: 'Confidence',
+    firstDiscovery: 'First discovery',
+    yes: 'Yes',
+    no: 'No',
+    dateSpotted: 'Date spotted',
+    location: 'Location',
+    locationHidden: 'Hidden for species protection',
+    exactLocationProtected: 'Exact location protected',
+    radiusKm: '±{n} km radius',
+    radiusM: '±{n} m radius',
+    about: 'About',
+    safetyEthics: 'Safety & Ethics',
+    privacyNotice:
+      'The image above is an AI recreation — your original photo is stored privately and never shared. GPS coordinates are fuzzed per species sensitivity rules.',
+  },
+  de: {
+    cardNotFound: 'Karte nicht gefunden',
+    cardNotFoundBody: 'Keine Daten für diese Karte gefunden.',
+    goBack: 'Zurück',
+    back: 'Zurück',
+    shareComingSoon: 'Teilen (bald verfügbar)',
+    firstDiscoveryTitle: 'Erstentdeckung!',
+    firstDiscoveryBody: 'Du hast diese Art zuerst entdeckt. +50 Bonus-XP erhalten.',
+    rarity: 'Seltenheit',
+    category: 'Kategorie',
+    confidence: 'Sicherheit',
+    firstDiscovery: 'Erstentdeckung',
+    yes: 'Ja',
+    no: 'Nein',
+    dateSpotted: 'Entdeckt am',
+    location: 'Ort',
+    locationHidden: 'Zum Artenschutz verborgen',
+    exactLocationProtected: 'Genauer Standort geschützt',
+    radiusKm: '±{n} km Umkreis',
+    radiusM: '±{n} m Umkreis',
+    about: 'Über',
+    safetyEthics: 'Sicherheit & Ethik',
+    privacyNotice:
+      'Das Bild oben ist eine KI-Rekonstruktion – dein Originalfoto wird privat gespeichert und nie geteilt. GPS-Koordinaten werden je nach Artensensibilität unscharf dargestellt.',
+  },
+} as const;
+
+/** Bound-translator type, used by module-level helpers below the component. */
+type TFunc = ReturnType<typeof useT<typeof C>>;
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
 
 function formatDate(iso: string): string {
   try {
@@ -88,11 +142,11 @@ function formatLocation(sighting: Sighting): string {
   return `${latStr}, ${lngStr}`;
 }
 
-function precisionLabel(meters: number, hidden: boolean): string {
-  if (hidden) return 'Exact location protected';
-  if (meters >= 5000) return `±${(meters / 1000).toFixed(0)} km radius`;
-  if (meters >= 1000) return `±${(meters / 1000).toFixed(1)} km radius`;
-  return `±${meters} m radius`;
+function precisionLabel(t: TFunc, meters: number, hidden: boolean): string {
+  if (hidden) return t('exactLocationProtected');
+  if (meters >= 5000) return t('radiusKm', { n: (meters / 1000).toFixed(0) });
+  if (meters >= 1000) return t('radiusKm', { n: (meters / 1000).toFixed(1) });
+  return t('radiusM', { n: meters });
 }
 
 /* ------------------------------------------------------------------ */
@@ -181,6 +235,8 @@ export function CardDetailScreen({ route, navigation }: Props) {
     sighting?.scientificName,
     sighting?.commonName ?? '',
   );
+  const t = useT(C);
+  const common = useCommon();
   // Store lookups are synchronous — no loading/error state needed.
   // isFirstDiscovery is not persisted on Sighting (see store notes); default false.
   const isFirstDiscovery = false;
@@ -197,9 +253,9 @@ export function CardDetailScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.root, styles.centred]}>
         <Ionicons name="close-circle-outline" size={40} color={colors.danger} style={styles.errorIcon} />
-        <Text style={styles.errorTitle}>Card not found</Text>
-        <Text style={styles.errorBody}>No data found for this card.</Text>
-        <Button title="Go back" variant="primary" onPress={handleBack} haptic={false} />
+        <Text style={styles.errorTitle}>{t('cardNotFound')}</Text>
+        <Text style={styles.errorBody}>{t('cardNotFoundBody')}</Text>
+        <Button title={t('goBack')} variant="primary" onPress={handleBack} haptic={false} />
       </View>
     );
   }
@@ -244,7 +300,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
               style={({ pressed }) => [styles.backCircle, pressed && styles.glassCirclePressed]}
               onPress={handleBack}
               hitSlop={12}
-              accessibilityLabel="Back"
+              accessibilityLabel={t('back')}
               accessibilityRole="button"
             >
               <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
@@ -255,7 +311,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
               <Pressable
                 style={({ pressed }) => [styles.glassCircle, pressed && styles.glassCirclePressed]}
                 disabled
-                accessibilityLabel="Share (coming soon)"
+                accessibilityLabel={t('shareComingSoon')}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: true }}
               >
@@ -284,10 +340,10 @@ export function CardDetailScreen({ route, navigation }: Props) {
               <Ionicons name="star" size={20} color={rarityColor} style={styles.firstDiscoveryIcon} />
               <View style={styles.firstDiscoveryText}>
                 <Text style={[styles.firstDiscoveryTitle, { color: rarityColor }]}>
-                  First Discovery!
+                  {t('firstDiscoveryTitle')}
                 </Text>
                 <Text style={styles.firstDiscoveryBody}>
-                  You're the first to find this species. +50 bonus XP awarded.
+                  {t('firstDiscoveryBody')}
                 </Text>
               </View>
             </View>
@@ -296,7 +352,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
           {isCaptive && (
             <View style={styles.captiveTag}>
               <Text style={styles.captiveTagText}>
-                {CAPTIVE_LABEL[captiveStatus] ?? captiveStatus}
+                {common.captive(captiveStatus)}
               </Text>
             </View>
           )}
@@ -304,15 +360,15 @@ export function CardDetailScreen({ route, navigation }: Props) {
           {/* Stats list — Apple Settings pattern */}
           <View style={styles.statsCard}>
             <StatRow
-              label="Rarity"
+              label={t('rarity')}
               value={<RarityBadge rarity={rarity} size="sm" />}
             />
             <StatRow
-              label="Category"
-              value={category.charAt(0).toUpperCase() + category.slice(1)}
+              label={t('category')}
+              value={common.category(category)}
             />
             <StatRow
-              label="Confidence"
+              label={t('confidence')}
               value={`${Math.round(confidence * 100)}%`}
             />
             <StatRow
@@ -320,19 +376,19 @@ export function CardDetailScreen({ route, navigation }: Props) {
               value={card.xp}
             />
             <StatRow
-              label="First discovery"
-              value={isFirstDiscovery ? 'Yes' : 'No'}
+              label={t('firstDiscovery')}
+              value={isFirstDiscovery ? t('yes') : t('no')}
             />
             <StatRow
-              label="Date spotted"
+              label={t('dateSpotted')}
               value={formatDate(createdAt)}
             />
             <StatRow
-              label="Location"
+              label={t('location')}
               value={
                 isHidden
-                  ? 'Hidden for species protection'
-                  : `${formatLocation(sighting)} · ${precisionLabel(publicLocation.precisionMeters, isHidden)}`
+                  ? t('locationHidden')
+                  : `${formatLocation(sighting)} · ${precisionLabel(t, publicLocation.precisionMeters, isHidden)}`
               }
               valueColor={isHidden ? colors.warning : undefined}
               last
@@ -343,7 +399,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
               intro (multiple paragraphs). The generated blurb is the offline /
               no-article fallback. */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>About</Text>
+            <Text style={styles.sectionTitle}>{t('about')}</Text>
             {loreLoading ? (
               <View style={styles.loreLoading}>
                 <ActivityIndicator color={colors.textMuted} />
@@ -398,7 +454,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
               icon="shield-checkmark-outline"
               iconColor={colors.warning}
               tint={`${colors.warning}1A`}
-              title="Safety & Ethics"
+              title={t('safetyEthics')}
               titleColor={colors.warning}
             >
               {card.safetyNotes.map((note, i) => (
@@ -416,8 +472,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
             tint={colors.surface}
           >
             <Text style={styles.privacyText}>
-              The image above is an AI recreation — your original photo is stored privately
-              and never shared. GPS coordinates are fuzzed per species sensitivity rules.
+              {t('privacyNotice')}
             </Text>
           </TintPanel>
         </View>
