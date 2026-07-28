@@ -1,9 +1,16 @@
 /**
- * OnboardingScreen — 3-step ethical discovery rules.
- * Dark nature-game aesthetic, collectible-card feel.
- * No API keys required — fully functional in mock mode.
+ * OnboardingScreen — "wonder first" first-run flow.
+ *
+ * Exactly 2 screens, no rule-reading gate before value is shown:
+ *   1. Wonder — an actual example card (legendary) + the core promise line.
+ *              This is the whole pitch, delivered before a single rule appears.
+ *   2. Pledge — "discover, don't disturb" condensed into one promise paragraph
+ *              + 3 compact points, instead of a 3-screen rulebook.
+ *
+ * Dark nature-game aesthetic, collectible-card feel. No API keys required —
+ * fully functional in mock mode.
  */
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,8 +19,6 @@ import {
   FlatList,
   Animated,
   Dimensions,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   ViewToken,
   StatusBar,
   Platform,
@@ -22,9 +27,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation/types';
-import { colors, spacing, radius, typography, motion } from '@/theme/theme';
+import type { Category, Rarity } from '@/domain/types';
+import { colors, rarityColors, spacing, radius, typography, motion } from '@/theme/theme';
 import { setOnboarded } from '@/lib/onboarding';
-import { Button } from '@/components';
+import { Button, MockCardImage, RarityBadge } from '@/components';
 import { useT } from '@/i18n';
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -33,15 +39,30 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
-interface Step {
-  id: string;
-  icon: IconName;
-  accentColor: string;
-  badge: string;
-  title: string;
-  subtitle: string;
-  rules: Array<{ icon: IconName; text: string }>;
+type SlideId = 'wonder' | 'pledge';
+
+interface Slide {
+  id: SlideId;
 }
+
+// ─── structural constants ───────────────────────────────────────────────────
+
+const SLIDES: Slide[] = [{ id: 'wonder' }, { id: 'pledge' }];
+
+/** Accent tint per slide — drives the active pager dot. */
+const SLIDE_ACCENT: Record<SlideId, string> = {
+  wonder: rarityColors.legendary,
+  pledge: colors.moss,
+};
+
+/**
+ * The demo card on the Wonder slide is always this exact rarity/category —
+ * the most dazzling combination available, precisely because this card
+ * doesn't need to be honest about a real find. It exists purely to sell the
+ * promise in the first 5 seconds, before any rule is mentioned.
+ */
+const HERO_RARITY: Rarity = 'legendary';
+const HERO_CATEGORY: Category = 'animal';
 
 // ─── content ─────────────────────────────────────────────────────────────────
 
@@ -49,61 +70,51 @@ const C = {
   en: {
     skipA11y: 'Skip onboarding',
     skip: 'Skip',
-    fieldGuide: 'FIELD GUIDE',
-    heroLine1: 'Discover. Collect.',
-    heroLine2: 'Protect.',
-    heroCaption: 'A few rules before you head into the wild.',
-    badge1: 'RULE 01',
-    title1: 'Respect the Wild',
-    subtitle1: 'Every creature deserves space.',
-    rule1a: 'Never disturb nests, dens, or young animals.',
-    rule1b: 'Observe silently — no sudden moves or noise.',
-    rule1c: 'Photograph from a safe distance. Zoom in, stay back.',
-    badge2: 'RULE 02',
-    title2: 'Honor Boundaries',
-    subtitle2: 'Discovery never justifies trespass.',
-    rule2a: 'Stay on public land and marked trails.',
-    rule2b: 'Private property = off-limits, always.',
-    rule2c: 'Do not collect, uproot, or damage plants.',
-    badge3: 'RULE 03',
-    title3: 'Protect the Rare',
-    subtitle3: 'Some locations must stay secret.',
-    rule3a: 'Exact GPS of protected species is never shared publicly.',
-    rule3b: 'Rare & endangered sightings get extra location fuzz.',
-    rule3c: 'Your original photo stays private — only AI cards go public.',
+
+    wonderEyebrow: 'YOUR FIELD GUIDE',
+    wonderRibbon: 'NEW DISCOVERY',
+    wonderCardName: 'Red Fox',
+    wonderCardSci: 'Vulpes vulpes',
+    wonderHeadline: 'Turn the real world into your collection.',
+    wonderCaption:
+      'Snap any plant or animal — LifeDex turns it into a one-of-a-kind card, rarity and all.',
     continueBtn: 'Continue',
-    startExploring: 'Start exploring',
+
+    pledgeEyebrow: 'THE PROMISE',
+    pledgeTitle: "Discover, don't disturb.",
+    pledgeBody:
+      'Get close with your camera, not your feet. LifeDex runs on one rule: observe gently, and let nature keep its secrets.',
+    pledgePoint1: 'Keep your distance — never handle or bait wildlife',
+    pledgePoint2: 'Stay on public trails; private land is off-limits',
+    pledgePoint3: 'Rare & protected species keep their exact location hidden',
+    getStartedBtn: 'Get Started',
     privacyFootnote: 'Your data stays on this device',
+
     progress: '{current} of {total}',
   },
   de: {
     skipA11y: 'Onboarding überspringen',
     skip: 'Überspringen',
-    fieldGuide: 'FELDFÜHRER',
-    heroLine1: 'Entdecken. Sammeln.',
-    heroLine2: 'Schützen.',
-    heroCaption: 'Ein paar Regeln, bevor du in die Wildnis aufbrichst.',
-    badge1: 'REGEL 01',
-    title1: 'Respektiere die Wildnis',
-    subtitle1: 'Jedes Lebewesen verdient Abstand.',
-    rule1a: 'Stör niemals Nester, Bauten oder Jungtiere.',
-    rule1b: 'Beobachte still — keine hektischen Bewegungen, kein Lärm.',
-    rule1c: 'Fotografiere aus sicherer Distanz. Zoome ran, bleib auf Abstand.',
-    badge2: 'REGEL 02',
-    title2: 'Halte dich an Grenzen',
-    subtitle2: 'Entdecken rechtfertigt kein unbefugtes Betreten.',
-    rule2a: 'Bleib auf öffentlichem Grund und markierten Wegen.',
-    rule2b: 'Privatgrundstücke sind immer tabu.',
-    rule2c: 'Sammle, entwurzle oder beschädige keine Pflanzen.',
-    badge3: 'REGEL 03',
-    title3: 'Schütze das Seltene',
-    subtitle3: 'Manche Orte müssen geheim bleiben.',
-    rule3a: 'Der genaue Standort geschützter Arten wird nie öffentlich geteilt.',
-    rule3b: 'Seltene & gefährdete Sichtungen bekommen zusätzliche Standort-Unschärfe.',
-    rule3c: 'Dein Originalfoto bleibt privat — nur die KI-Karte wird öffentlich.',
+
+    wonderEyebrow: 'DEIN FELDFÜHRER',
+    wonderRibbon: 'NEUE ENTDECKUNG',
+    wonderCardName: 'Rotfuchs',
+    wonderCardSci: 'Vulpes vulpes',
+    wonderHeadline: 'Verwandle die echte Natur in deine Sammlung.',
+    wonderCaption:
+      'Fotografiere Pflanze oder Tier — LifeDex macht daraus eine einzigartige Karte, inklusive Seltenheit.',
     continueBtn: 'Weiter',
-    startExploring: "Los geht's",
+
+    pledgeEyebrow: 'UNSER VERSPRECHEN',
+    pledgeTitle: 'Entdecken, nicht stören.',
+    pledgeBody:
+      'Komm mit der Kamera näher, nicht mit den Füßen. LifeDex folgt einer Regel: sanft beobachten und der Natur ihre Geheimnisse lassen.',
+    pledgePoint1: 'Abstand halten — Tiere nie berühren oder anlocken',
+    pledgePoint2: 'Auf öffentlichen Wegen bleiben; Privatgrund ist tabu',
+    pledgePoint3: 'Seltene & geschützte Arten behalten ihren genauen Standort für sich',
+    getStartedBtn: "Los geht's",
     privacyFootnote: 'Deine Daten bleiben auf diesem Gerät',
+
     progress: '{current} von {total}',
   },
 } as const;
@@ -112,52 +123,108 @@ const { width: SCREEN_W } = Dimensions.get('window');
 
 // ─── sub-components ──────────────────────────────────────────────────────────
 
-const RuleRow = React.memo(({ icon, text }: { icon: IconName; text: string }) => (
-  <View style={styles.ruleRow}>
-    <View style={styles.ruleIconBox}>
+/** Icon + text row — used for the pledge's condensed key points. */
+const PointRow = React.memo(({ icon, text }: { icon: IconName; text: string }) => (
+  <View style={styles.pointRow}>
+    <View style={styles.pointIconBox}>
       <Ionicons name={icon} size={18} color={colors.textPrimary} />
     </View>
-    <Text style={styles.ruleText}>{text}</Text>
+    <Text style={styles.pointText}>{text}</Text>
   </View>
 ));
 
-const StepCard = React.memo(({ step, index }: { step: Step; index: number }) => (
-  <View style={[styles.cardSlide, { width: SCREEN_W }]}>
-    <View style={[styles.card, { borderColor: step.accentColor + '40' }]}>
-      {/* top accent bar */}
-      <View style={[styles.accentBar, { backgroundColor: step.accentColor }]} />
+/**
+ * Screen 1 — the "aha". An actual example card, front and center, before any
+ * rule is mentioned. Pops in with a small bounce so the first frame already
+ * feels alive rather than like a form to get through.
+ */
+const WonderSlide = React.memo(() => {
+  const t = useT(C);
+  const pop = useRef(new Animated.Value(0)).current;
 
-      {/* badge + icon */}
-      <View style={styles.cardHeader}>
-        <View style={[styles.badge, { borderColor: step.accentColor + '80' }]}>
-          <Text style={[styles.badgeText, { color: step.accentColor }]}>{step.badge}</Text>
+  useEffect(() => {
+    Animated.timing(pop, {
+      toValue: 1,
+      duration: motion.duration.reveal,
+      easing: motion.easing.overshoot,
+      useNativeDriver: true,
+    }).start();
+  }, [pop]);
+
+  const cardScale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
+
+  return (
+    <View style={[styles.slide, { width: SCREEN_W }]}>
+      <Text style={styles.wonderEyebrow}>{t('wonderEyebrow')}</Text>
+
+      <Animated.View style={[styles.heroCard, { opacity: pop, transform: [{ scale: cardScale }] }]}>
+        <View style={styles.heroAccentBar} />
+        <View style={styles.heroImageArea}>
+          <MockCardImage
+            uri="mock-card://onboarding/hero"
+            rarity={HERO_RARITY}
+            category={HERO_CATEGORY}
+            name={t('wonderCardName')}
+          />
+          <View style={styles.heroRibbon}>
+            <Ionicons name="sparkles" size={11} color={colors.onAccent} />
+            <Text style={styles.heroRibbonText}>{t('wonderRibbon')}</Text>
+          </View>
         </View>
-        <View style={[styles.iconCircle, { backgroundColor: step.accentColor + '18' }]}>
-          <Ionicons name={step.icon} size={26} color={step.accentColor} />
+        <View style={styles.heroCardFooter}>
+          <View style={styles.heroNameBlock}>
+            <Text style={styles.heroCardName}>{t('wonderCardName')}</Text>
+            <Text style={styles.heroCardSci}>{t('wonderCardSci')}</Text>
+          </View>
+          <RarityBadge rarity={HERO_RARITY} size="md" />
         </View>
-      </View>
+      </Animated.View>
 
-      {/* title */}
-      <Text style={styles.cardTitle}>{step.title}</Text>
-      <Text style={styles.cardSubtitle}>{step.subtitle}</Text>
-
-      {/* divider */}
-      <View style={[styles.divider, { backgroundColor: step.accentColor + '30' }]} />
-
-      {/* rules */}
-      <View style={styles.rulesContainer}>
-        {step.rules.map((rule) => (
-          <RuleRow key={rule.text} icon={rule.icon} text={rule.text} />
-        ))}
-      </View>
-
-      {/* step number watermark */}
-      <Text style={[styles.stepWatermark, { color: step.accentColor + '12' }]}>
-        0{index + 1}
-      </Text>
+      <Text style={styles.wonderHeadline}>{t('wonderHeadline')}</Text>
+      <Text style={styles.wonderCaption}>{t('wonderCaption')}</Text>
     </View>
-  </View>
-));
+  );
+});
+
+/**
+ * Screen 2 — the ethics, condensed to one promise + 3 compact points instead
+ * of a 3-screen rulebook. Still the brand's core ethos ("discover, don't
+ * disturb"), just framed as what LifeDex does for the wild, not a checklist
+ * standing between the user and the app.
+ */
+const PledgeSlide = React.memo(() => {
+  const t = useT(C);
+
+  const points: Array<{ icon: IconName; text: string }> = [
+    { icon: 'paw-outline', text: t('pledgePoint1') },
+    { icon: 'trail-sign-outline', text: t('pledgePoint2') },
+    { icon: 'eye-off-outline', text: t('pledgePoint3') },
+  ];
+
+  return (
+    <View style={[styles.slide, { width: SCREEN_W }]}>
+      <View style={styles.pledgeCard}>
+        <View style={styles.pledgeAccentBar} />
+        <View style={styles.pledgeInner}>
+          <View style={styles.pledgeIconCircle}>
+            <Ionicons name="shield-checkmark-outline" size={26} color={colors.moss} />
+          </View>
+          <Text style={styles.pledgeEyebrow}>{t('pledgeEyebrow')}</Text>
+          <Text style={styles.pledgeTitle}>{t('pledgeTitle')}</Text>
+          <Text style={styles.pledgeBody}>{t('pledgeBody')}</Text>
+
+          <View style={styles.pledgeDivider} />
+
+          <View style={styles.pointsContainer}>
+            {points.map((p) => (
+              <PointRow key={p.text} icon={p.icon} text={p.text} />
+            ))}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+});
 
 const DOT_WIDTH_INACTIVE = 6;
 const DOT_WIDTH_ACTIVE = 20;
@@ -194,49 +261,8 @@ const Dot = React.memo(({ active, color }: { active: boolean; color: string }) =
 
 export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
   const t = useT(C);
-  const STEPS: Step[] = [
-    {
-      id: 'respect',
-      icon: 'paw-outline',
-      accentColor: colors.success, // moss green
-      badge: t('badge1'),
-      title: t('title1'),
-      subtitle: t('subtitle1'),
-      rules: [
-        { icon: 'egg-outline', text: t('rule1a') },
-        { icon: 'volume-mute-outline', text: t('rule1b') },
-        { icon: 'camera-outline', text: t('rule1c') },
-      ],
-    },
-    {
-      id: 'boundaries',
-      icon: 'trail-sign-outline',
-      accentColor: colors.teal,
-      badge: t('badge2'),
-      title: t('title2'),
-      subtitle: t('subtitle2'),
-      rules: [
-        { icon: 'walk-outline', text: t('rule2a') },
-        { icon: 'home-outline', text: t('rule2b') },
-        { icon: 'leaf-outline', text: t('rule2c') },
-      ],
-    },
-    {
-      id: 'protect',
-      icon: 'shield-half-outline',
-      accentColor: colors.amber,
-      badge: t('badge3'),
-      title: t('title3'),
-      subtitle: t('subtitle3'),
-      rules: [
-        { icon: 'location-outline', text: t('rule3a') },
-        { icon: 'eye-off-outline', text: t('rule3b') },
-        { icon: 'lock-closed-outline', text: t('rule3c') },
-      ],
-    },
-  ];
   const [activeIndex, setActiveIndex] = useState(0);
-  const flatRef = useRef<FlatList<Step>>(null);
+  const flatRef = useRef<FlatList<Slide>>(null);
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -264,7 +290,7 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
 
   const handleNext = useCallback(() => {
     const next = activeIndex + 1;
-    if (next < STEPS.length) {
+    if (next < SLIDES.length) {
       flatRef.current?.scrollToIndex({ index: next, animated: true });
     } else {
       finish();
@@ -275,8 +301,8 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
     finish();
   }, [finish]);
 
-  const isLast = activeIndex === STEPS.length - 1;
-  const activeStep = STEPS[activeIndex] ?? STEPS[0]!;
+  const isLast = activeIndex === SLIDES.length - 1;
+  const activeSlide = SLIDES[activeIndex] ?? SLIDES[0]!;
   // guaranteed non-null since activeIndex is bounded
 
   return (
@@ -300,50 +326,32 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
         </Pressable>
       </View>
 
-      {/* hero headline */}
-      <View style={styles.heroSection}>
-        <Text style={styles.heroLabel}>{t('fieldGuide')}</Text>
-        <Text style={styles.heroTitle}>
-          {t('heroLine1')}
-          {'\n'}
-          {t('heroLine2')}
-        </Text>
-        <Text style={styles.heroCaption}>{t('heroCaption')}</Text>
-      </View>
-
-      {/* cards pager */}
+      {/* slides pager */}
       <FlatList
         ref={flatRef}
-        data={STEPS}
+        data={SLIDES}
         keyExtractor={(s) => s.id}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        renderItem={({ item, index }) => (
-          <StepCard step={item} index={index} />
-        )}
+        renderItem={({ item }) => (item.id === 'wonder' ? <WonderSlide /> : <PledgeSlide />)}
         style={styles.pager}
-        contentContainerStyle={styles.pagerContent}
       />
 
       {/* bottom controls */}
       <View style={styles.bottomBar}>
         {/* dots */}
         <View style={styles.dots}>
-          {STEPS.map((s, i) => (
-            <Dot
-              key={s.id}
-              active={i === activeIndex}
-              color={activeStep.accentColor}
-            />
+          {SLIDES.map((s, i) => (
+            <Dot key={s.id} active={i === activeIndex} color={SLIDE_ACCENT[activeSlide.id]} />
           ))}
         </View>
 
         {/* CTA button */}
         <Button
-          title={isLast ? t('startExploring') : t('continueBtn')}
+          title={isLast ? t('getStartedBtn') : t('continueBtn')}
           onPress={handleNext}
           variant="primary"
           size="lg"
@@ -359,7 +367,7 @@ export function OnboardingScreen({ navigation }: Props): React.JSX.Element {
 
         {/* progress caption */}
         <Text style={styles.progressCaption}>
-          {t('progress', { current: activeIndex + 1, total: STEPS.length })}
+          {t('progress', { current: activeIndex + 1, total: SLIDES.length })}
         </Text>
       </View>
     </SafeAreaView>
@@ -403,49 +411,108 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // hero section
-  heroSection: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  heroLabel: {
-    ...typography.label,
-    color: colors.moss,
-    letterSpacing: 2,
-    marginBottom: spacing.xs,
-  },
-  heroTitle: {
-    ...typography.title1,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  heroCaption: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-
   // pager
   pager: {
     flex: 1,
   },
-  pagerContent: {
-    // paging handles width
-  },
-  cardSlide: {
+  slide: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     justifyContent: 'center',
   },
 
-  // card
-  card: {
+  // wonder slide — hero card
+  wonderEyebrow: {
+    ...typography.label,
+    color: colors.moss,
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  heroCard: {
+    alignSelf: 'center',
+    width: '86%',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
+    borderColor: `${rarityColors.legendary}55`,
     overflow: 'hidden',
-    padding: spacing.lg,
-    // subtle shadow
+    marginBottom: spacing.lg,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.45,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
+  },
+  heroAccentBar: {
+    height: 3,
+    backgroundColor: rarityColors.legendary,
+  },
+  heroImageArea: {
+    height: 190,
+    backgroundColor: colors.surfaceElevated,
+  },
+  heroRibbon: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: rarityColors.legendary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  heroRibbonText: {
+    ...typography.label,
+    color: colors.onAccent,
+    letterSpacing: 0.8,
+  },
+  heroCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  heroNameBlock: {
+    gap: 2,
+  },
+  heroCardName: {
+    ...typography.headline,
+    color: colors.textPrimary,
+  },
+  heroCardSci: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  wonderHeadline: {
+    ...typography.title1,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  wonderCaption: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+
+  // pledge slide
+  pledgeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: `${colors.moss}40`,
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -458,73 +525,58 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  accentBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+  pledgeAccentBar: {
     height: 3,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    backgroundColor: colors.moss,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
+  pledgeInner: {
+    padding: spacing.lg,
   },
-  badge: {
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  badgeText: {
-    ...typography.label,
-    letterSpacing: 1.5,
-  },
-  iconCircle: {
+  pledgeIconCircle: {
     width: 52,
     height: 52,
     borderRadius: 26,
+    backgroundColor: `${colors.moss}18`,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: spacing.sm,
   },
-  cardTitle: {
-    ...typography.title2,
-    color: colors.textPrimary,
+  pledgeEyebrow: {
+    ...typography.label,
+    color: colors.moss,
+    letterSpacing: 2,
+    textAlign: 'center',
     marginBottom: spacing.xs,
   },
-  cardSubtitle: {
-    ...typography.callout,
+  pledgeTitle: {
+    ...typography.title2,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  pledgeBody: {
+    ...typography.body,
     color: colors.textSecondary,
+    textAlign: 'center',
     marginBottom: spacing.md,
   },
-  divider: {
+  pledgeDivider: {
     height: 1,
+    backgroundColor: `${colors.moss}30`,
     marginBottom: spacing.md,
   },
-  rulesContainer: {
+  pointsContainer: {
     gap: spacing.sm,
   },
-  stepWatermark: {
-    position: 'absolute',
-    bottom: spacing.md,
-    right: spacing.md,
-    fontSize: 80,
-    fontWeight: '900',
-    lineHeight: 80,
-    letterSpacing: -4,
-  },
 
-  // rule row
-  ruleRow: {
+  // point row (pledge key points)
+  pointRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  ruleIconBox: {
+  pointIconBox: {
     width: 36,
     height: 36,
     borderRadius: radius.sm,
@@ -533,7 +585,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  ruleText: {
+  pointText: {
     ...typography.body,
     color: colors.textPrimary,
     flex: 1,

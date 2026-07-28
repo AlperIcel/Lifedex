@@ -1,6 +1,9 @@
 /**
  * Smoke tests for OnboardingScreen — verifies content rendering and
  * navigation contract without requiring a device/emulator.
+ *
+ * The screen is "wonder first": slide 1 shows an example card + the core
+ * promise (no rules yet), slide 2 condenses the ethics into one pledge.
  */
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
@@ -51,30 +54,35 @@ describe('OnboardingScreen', () => {
     expect(getByText('LifeDex')).toBeTruthy();
   });
 
-  it('renders the hero headline', () => {
+  it('renders the wonder headline — the core promise, before any rule', () => {
     const { getByText } = renderScreen();
-    expect(getByText(/Discover\. Collect\./)).toBeTruthy();
+    expect(getByText(/Turn the real world into your collection/)).toBeTruthy();
   });
 
-  it('shows all three step badges', () => {
-    const { getByText } = renderScreen();
-    expect(getByText('RULE 01')).toBeTruthy();
-    expect(getByText('RULE 02')).toBeTruthy();
-    expect(getByText('RULE 03')).toBeTruthy();
+  it('leads with an example card, not a rules checklist', () => {
+    const { getAllByText, getByText, queryByText } = renderScreen();
+    // The "wow" — a fully-dressed example card is visible immediately.
+    // "Red Fox" appears twice by design: once inside the card art placeholder
+    // (MockCardImage draws the name into the artwork) and once in the card's
+    // name label below it — exactly like a real caught card would.
+    expect(getAllByText('Red Fox').length).toBeGreaterThan(0);
+    expect(getByText('Vulpes vulpes')).toBeTruthy();
+    expect(getByText('NEW DISCOVERY')).toBeTruthy();
+    expect(getByText('LEGENDARY')).toBeTruthy();
+    // Old "RULE 01 / RULE 02 / RULE 03" gate must be gone.
+    expect(queryByText(/RULE 0\d/)).toBeNull();
   });
 
-  it('shows all three card titles', () => {
+  it('shows the pledge title condensing the ethics into one promise', () => {
     const { getByText } = renderScreen();
-    expect(getByText('Respect the Wild')).toBeTruthy();
-    expect(getByText('Honor Boundaries')).toBeTruthy();
-    expect(getByText('Protect the Rare')).toBeTruthy();
+    expect(getByText(/Discover, don.t disturb\./)).toBeTruthy();
   });
 
-  it('shows key rule text', () => {
+  it('shows the 3 condensed key points on the pledge screen', () => {
     const { getByText } = renderScreen();
-    expect(getByText(/Never disturb nests/)).toBeTruthy();
-    expect(getByText(/Stay on public land/)).toBeTruthy();
-    expect(getByText(/original photo stays private/)).toBeTruthy();
+    expect(getByText(/Keep your distance/)).toBeTruthy();
+    expect(getByText(/Stay on public trails/)).toBeTruthy();
+    expect(getByText(/Rare & protected species/)).toBeTruthy();
   });
 
   it('renders a Skip button', () => {
@@ -91,12 +99,12 @@ describe('OnboardingScreen', () => {
 
   it('renders the CTA button', () => {
     const { getByRole } = renderScreen();
-    const ctaBtn = getByRole('button', { name: /Continue|Start exploring/ });
+    const ctaBtn = getByRole('button', { name: /Continue|Get Started/ });
     expect(ctaBtn).toBeTruthy();
   });
 
-  it('shows progress "1 of 3"', () => {
+  it('shows progress "1 of 2" — a 2-screen flow, not 3', () => {
     const { getByText } = renderScreen();
-    expect(getByText('1 of 3')).toBeTruthy();
+    expect(getByText('1 of 2')).toBeTruthy();
   });
 });
