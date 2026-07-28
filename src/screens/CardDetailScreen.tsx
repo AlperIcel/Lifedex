@@ -22,6 +22,7 @@
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -338,41 +339,56 @@ export function CardDetailScreen({ route, navigation }: Props) {
             />
           </View>
 
-          {/* About — real species lore (Wikipedia); the generated blurb is the
-              offline / no-article fallback. */}
+          {/* About — real species lore (Wikipedia): a reference photo + the full
+              intro (multiple paragraphs). The generated blurb is the offline /
+              no-article fallback. */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>
             {loreLoading ? (
               <View style={styles.loreLoading}>
                 <ActivityIndicator color={colors.textMuted} />
+                <Text style={styles.loreLoadingText}>Looking up {card.name}…</Text>
               </View>
-            ) : (
+            ) : lore !== null ? (
               <>
-                <Text style={styles.descriptionText}>
-                  {lore !== null ? lore.summary : card.description}
-                </Text>
-                {lore !== null && (
-                  <View style={styles.loreFooter}>
-                    <Text style={styles.loreSource}>
-                      {lore.description !== undefined
-                        ? `${lore.description} · via Wikipedia`
-                        : 'via Wikipedia'}
-                    </Text>
-                    {lore.url !== undefined && (
-                      <Pressable
-                        onPress={() => {
-                          void Linking.openURL(lore.url as string);
-                        }}
-                        hitSlop={8}
-                        accessibilityRole="link"
-                        accessibilityLabel="Read more on Wikipedia"
-                      >
-                        <Text style={styles.loreLink}>Read more →</Text>
-                      </Pressable>
-                    )}
-                  </View>
+                {lore.imageUrl !== undefined && (
+                  <Image
+                    source={{ uri: lore.imageUrl }}
+                    style={styles.loreImage}
+                    resizeMode="cover"
+                    accessibilityLabel={`Reference photo of ${card.name}`}
+                  />
                 )}
+                {lore.summary.split(/\n{2,}/).map((para, i) => (
+                  <Text
+                    key={i}
+                    style={[styles.descriptionText, i > 0 && styles.loreParaSpacing]}
+                  >
+                    {para.trim()}
+                  </Text>
+                ))}
+                <View style={styles.loreFooter}>
+                  <Text style={styles.loreSource}>
+                    {lore.description !== undefined
+                      ? `${lore.description} · via Wikipedia`
+                      : 'via Wikipedia'}
+                  </Text>
+                  {lore.url !== undefined && (
+                    <Pressable
+                      onPress={() => {
+                        void Linking.openURL(lore.url as string);
+                      }}
+                      hitSlop={8}
+                      accessibilityRole="link"
+                      accessibilityLabel="Read more on Wikipedia"
+                    >
+                      <Text style={styles.loreLink}>Read more →</Text>
+                    </Pressable>
+                  )}
+                </View>
               </>
+            ) : (
+              <Text style={styles.descriptionText}>{card.description}</Text>
             )}
           </View>
 
@@ -612,8 +628,24 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   loreLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.md,
-    alignItems: 'flex-start',
+  },
+  loreLoadingText: {
+    ...typography.body,
+    color: colors.textMuted,
+  },
+  loreImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceElevated,
+  },
+  loreParaSpacing: {
+    marginTop: spacing.sm,
   },
   loreFooter: {
     flexDirection: 'row',

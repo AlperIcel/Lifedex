@@ -1,12 +1,15 @@
 /**
- * Species lore — a short, interesting blurb (origin, range, cool facts) for each
- * plant/animal, fetched on demand from Wikipedia's public REST summary API.
+ * Species lore — a rich, interesting blurb (origin, range, cool facts) plus a
+ * reference photo for each plant/animal, from Wikipedia's public API.
  *
  * Why Wikipedia: it scales to ANY species (no curated table to maintain), needs
- * NO API key, and returns a clean 1–3 sentence extract. Best-effort and cached:
+ * NO API key. We use the MediaWiki query API in a single call to get the FULL
+ * lead section (several paragraphs — much richer than the short REST summary),
+ * a short descriptor, and a thumbnail image. Best-effort and cached:
  *   - Tries the scientific name first (most precise), then the common name.
+ *   - Redirects are followed (a scientific name resolves to the real article).
  *   - Results (including "not found") are cached in AsyncStorage so we hit the
- *     network at most once per species, and never on a screen the user reopens.
+ *     network at most once per species.
  *   - On failure/offline it resolves to null; the UI falls back to the card's
  *     own generated description. Nothing here is required for the app to run.
  *
@@ -17,19 +20,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
 export interface LoreEntry {
-  /** 1–3 sentence plain-text summary (the "interesting facts" blurb). */
+  /** Full lead section as plain text (multiple paragraphs, separated by \n\n). */
   summary: string;
   /** Very short descriptor, e.g. "species of fern". */
   description?: string;
+  /** Reference photo of the species (Wikipedia lead image), if any. */
+  imageUrl?: string;
   /** Link to the full article. */
   url?: string;
   source: 'wikipedia';
 }
 
-const CACHE_PREFIX = 'lore:v1:';
-const WIKI_SUMMARY = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
+const CACHE_PREFIX = 'lore:v2:';
+const WIKI_API = 'https://en.wikipedia.org/w/api.php';
 /** Sentinel stored when Wikipedia has no usable article — avoids refetching. */
 const MISS = '__miss__';
+/** Cap very long articles so the card stays readable (kept at a sentence end). */
+const MAX_CHARS = 1600;
 
 /** In-memory cache so re-opening a card in the same session is instant. */
 const mem = new Map<string, LoreEntry | null>();
@@ -38,28 +45,61 @@ function keyFor(scientificName: string | undefined, commonName: string): string 
   return (scientificName ?? commonName).trim().toLowerCase();
 }
 
-/** Shape of the bits of the Wikipedia REST summary response we use. */
-interface WikiSummary {
-  type?: string;
+/** Trim to <= MAX_CHARS, cutting at the last sentence/paragraph boundary. */
+function capText(text: string): string {
+  const t = text.trim();
+  if (t.length <= MAX_CHARS) return t;
+  const slice = t.slice(0, MAX_CHARS);
+  const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('.\n'));
+  return (lastStop > MAX_CHARS * 0.5 ? slice.slice(0, lastStop + 1) : slice.trimEnd()) + ' …';
+}
+
+/** Shape of the bits of the MediaWiki query response we use. */
+interface WikiPage {
   title?: string;
+  missing?: string;
   extract?: string;
   description?: string;
-  content_urls?: { desktop?: { page?: string } };
+  thumbnail?: { source?: string };
+}
+interface WikiResponse {
+  query?: { pages?: Record<string, WikiPage> };
 }
 
 async function fetchOne(title: string): Promise<LoreEntry | null> {
-  const url = `${WIKI_SUMMARY}${encodeURIComponent(title.trim().replace(/\s+/g, '_'))}`;
-  const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    redirects: '1',
+    titles: title.trim(),
+    prop: 'extracts|pageimages|description',
+    exintro: '1',
+    explaintext: '1',
+    piprop: 'thumbnail',
+    pithumbsize: '640',
+    origin: '*',
+  });
+  const resp = await fetch(`${WIKI_API}?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
   if (!resp.ok) return null;
-  const data = (await resp.json()) as WikiSummary;
-  // Skip disambiguation / empty pages — they aren't real lore.
-  if (data.type === 'disambiguation') return null;
-  const summary = typeof data.extract === 'string' ? data.extract.trim() : '';
-  if (summary.length === 0) return null;
+  const data = (await resp.json()) as WikiResponse;
+  const pages = data.query?.pages;
+  if (pages === undefined) return null;
+  const page = Object.values(pages)[0];
+  if (page === undefined || page.missing !== undefined) return null;
+
+  const extract = typeof page.extract === 'string' ? page.extract.trim() : '';
+  if (extract.length === 0) return null;
+  // A disambiguation page's extract typically says "may refer to" — skip it.
+  if (/\bmay refer to\b/i.test(extract) && extract.length < 240) return null;
+
+  const resolvedTitle = page.title ?? title;
   return {
-    summary,
-    description: typeof data.description === 'string' ? data.description : undefined,
-    url: data.content_urls?.desktop?.page,
+    summary: capText(extract),
+    description: typeof page.description === 'string' ? page.description : undefined,
+    imageUrl: page.thumbnail?.source,
+    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(resolvedTitle.replace(/\s+/g, '_'))}`,
     source: 'wikipedia',
   };
 }
@@ -75,7 +115,6 @@ export async function fetchLore(
   const key = keyFor(scientificName, commonName);
   if (mem.has(key)) return mem.get(key) ?? null;
 
-  // Persistent cache (survives restarts).
   try {
     const cached = await AsyncStorage.getItem(CACHE_PREFIX + key);
     if (cached !== null) {
@@ -97,8 +136,7 @@ export async function fetchLore(
       if (entry !== null) break;
     }
   } catch {
-    // Network/offline — leave entry null. DON'T cache a transient network miss as
-    // permanent; only cache a definitive "no article" result below.
+    // Network/offline — don't cache a transient miss as permanent.
     mem.set(key, null);
     return null;
   }

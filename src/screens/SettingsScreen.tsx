@@ -199,9 +199,6 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   };
 
   const appVersion = Constants.expoConfig?.version ?? '0.1.0';
-  const aiProvider = env.isMockAi ? 'Simulated (mock)' : 'Google Vision';
-  const mapsProvider = env.isMockMaps ? 'Simulated map' : 'Native maps';
-  const community = env.useSupabase ? 'On (anonymous)' : 'Off';
 
   const avatarInitial = (profile.username.charAt(0) || '?').toUpperCase();
 
@@ -355,20 +352,6 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
           endorsed by, any of these projects.
         </Text>
       </View>
-
-      {/* ── Developer (hidden from real users; __DEV__ only) ── */}
-      {__DEV__ ? (
-        <>
-          <SectionHeader title="Developer" />
-          <View style={styles.card}>
-            <Row label="AI recognition" value={aiProvider} />
-            <View style={styles.sep} />
-            <Row label="Maps" value={mapsProvider} />
-            <View style={styles.sep} />
-            <Row label="Community" value={community} />
-          </View>
-        </>
-      ) : null}
     </ScreenContainer>
   );
 }
