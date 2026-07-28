@@ -61,6 +61,16 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Build-queue batch (2026-07-28, while the first EAS build queued):** pushed all
+  commits to GitHub (`AlperIcel/Lifedex`); wrote the **recognition proxies**
+  (`supabase/functions/inat-proxy` + `plantnet-proxy`, Deno — token-off-device,
+  JWT-gated, rate-limit TODO; deploy steps in `docs/OWNER_SETUP.md`); improved the
+  **native map** path (centre-on-user + recenter FAB, privacy markers intact —
+  code only, visible in a dev build + Maps key); drafted **store docs**
+  (`docs/PRIVACY_POLICY.md` EN/DE grounded in real behaviour, `docs/STORE_LISTING.md`).
+  Note: the first dev build was stuck in the EAS **free-tier queue** for ~1 h —
+  a dev build only bundles the native shell, so all JS since (`Phase 2`, km/mi,
+  i18n) loads live from Metro; no rebuild needed for those.
 - **Solo-cut (release-plan step 2, 2026-07-28): Ranks tab → local Stats & Achievements.**
   Leaderboard tab replaced by a fully local `StatsScreen` (profile hero with
   LevelRing, overview tiles, category/rarity breakdown, achievements grid) — no
