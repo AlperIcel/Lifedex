@@ -4,7 +4,7 @@
 > resuming, and UPDATE it whenever something meaningful changes. Working dir:
 > `C:\Users\Alper\Downloads\LifeDex`.
 >
-> **Last updated:** 2026-07-27
+> **Last updated:** 2026-07-28
 
 ---
 
@@ -46,7 +46,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Local persistence (survives restart) | ✅ AsyncStorage |
 | Community feed + leaderboard | ✅ real when Supabase configured; simulated fallback |
 | Design (all 8 screens + tab bar) | ✅ Apple-level overhaul (Ionicons, haptics, motion) |
-| Settings / privacy / export / delete | ✅ |
+| Settings / privacy / export / delete | ✅ game-style sections + real haptics/units toggles (`store/settings.ts`) |
 | Maps | ⚠️ stylised MockMapView; native gated behind an (unset) key + dev build |
 | Real accounts | ❌ anonymous-only (device = identity) |
 | Recognition ENGINE quality | ✅ REAL + LIVE-VERIFIED on device (iNaturalist CV token active; caught "Nephrolepis exaltata" correctly). PlantNet flora refiner optional. |
@@ -59,6 +59,25 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **On-device test sprint (real Android via Expo Go)** — batch of end-user fixes:
+  - **Discovery-hunt de-dup:** same species is now catchable again only >~1 km
+    away (`NEARBY_METERS`); within 1 km → blocked with an "already found nearby,
+    keep exploring" message. Zoo/same-spot farming yields one catch. Time no
+    longer matters (was 500 m + same-day). `dedup.ts` reworked, pipeline +
+    Capture overlay updated, tests rewritten.
+  - **Recent-discoveries thumbnail** now shows the real captured crop (was a
+    generic category icon); the crop is copied to the document dir so it survives
+    restarts (`cropCardGen.ts`).
+  - **Species lore** (`src/lib/lore.ts`): best-effort Wikipedia REST summary per
+    species (no key, cached, offline-safe), shown in CardDetail "About" with a
+    Read-more link; generated blurb is the fallback.
+  - **Back button** on CardDetail is now a high-contrast dark disc (was a near-
+    invisible translucent glass circle).
+  - **Leaderboard honesty:** explicit "example players — not real people" banner
+    when the ranking is simulated (no backend).
+  - **Settings** rewritten into end-user game sections (Profile, Gameplay,
+    Notifications, Privacy & Data, Info) with a real Haptics toggle + km/mi units
+    (`src/store/settings.ts`); dev-only provider diagnostics behind `__DEV__`.
 - **Recognition live-verified** on a real Android device via Expo Go (iNaturalist
   token in `.env` → `expo.extra`; correctly IDed a Boston fern with real XP/rarity).
 - **Immersive Android UI:** hide the system navigation bar (`expo-navigation-bar`,
@@ -117,6 +136,17 @@ real accounts, scale moderation) remain.
 5. **Community moderation ops** (report button + `moderation_status` + review).
 6. **EAS build + store prep** (eas.json, icons/splash, privacy policy, GDPR
    server-side deletion of Storage files), retention (push notifications).
+
+### Deferred to a development build (can't work in Expo Go) — user tested 2026-07-28
+- **Real zoomable map** matching the true environment (react-native-maps +
+  Google Maps key). Today the Map is the stylised `MockMapView` (abstract
+  circles = fuzzed sighting markers), not a real basemap; not interactive/zoomable.
+- **Hide the Android system navigation bar** (immersive). `expo-navigation-bar`
+  is wired in `App.tsx` but is a no-op under Expo Go + SDK 54 edge-to-edge; it
+  should take effect in a dev/prod build.
+- **km/mi unit setting has no live consumer yet** — wire `formatDistance` from
+  `store/settings.ts` into `CardDetailScreen` location/precision labels
+  (follow-up task filed).
 
 ## Owner setup (unlocks features; all guarded — app works without them)
 See **`docs/OWNER_SETUP.md`**. Summary: run `supabase/storage.sql` (card images

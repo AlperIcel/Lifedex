@@ -297,6 +297,16 @@ export default function LeaderboardScreen(_props: Props) {
       >
         <SegmentedControl active={activeFilter} onSelect={handleSelectFilter} />
 
+        {source === 'simulated' && (
+          <View style={styles.simNote}>
+            <Ionicons name="flask-outline" size={15} color={colors.textMuted} style={styles.simNoteIcon} />
+            <Text style={styles.simNoteText}>
+              Example players — not real people. Real rankings appear once a community
+              backend is connected.
+            </Text>
+          </View>
+        )}
+
         <Podium entries={podiumEntries} />
 
         <View style={styles.divider} />
@@ -362,6 +372,27 @@ const styles = StyleSheet.create({
   segmentTextActive: {
     color: colors.onAccent,
     fontWeight: '700',
+  },
+
+  /* Simulated-data honesty note */
+  simNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  simNoteIcon: {
+    marginTop: 1,
+  },
+  simNoteText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    flex: 1,
+    lineHeight: 17,
   },
 
   /* Podium */

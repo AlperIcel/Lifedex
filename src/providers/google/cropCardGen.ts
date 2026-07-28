@@ -11,6 +11,8 @@
  * so the pipeline can fall back to the emoji placeholder.
  */
 import * as ImageManipulator from 'expo-image-manipulator';
+// Legacy FS API (SDK 54 moved copy/makeDirectory to the /legacy entrypoint).
+import * as FileSystem from 'expo-file-system/legacy';
 
 import type { CardMetadata, RecognitionResult } from '@/domain/types';
 import type { CardImageGenerationProvider } from '../interfaces';
@@ -18,6 +20,28 @@ import { computeCropRect } from './cropRect';
 
 const OUTPUT_SIZE = 1024;
 const JPEG_QUALITY = 0.8;
+
+/**
+ * ImageManipulator writes into the CACHE directory, which the OS can evict — so a
+ * persisted collection card would later show a broken image. Copy the crop into
+ * the document directory (durable) and return that path instead.
+ */
+const CARD_DIR = `${FileSystem.documentDirectory ?? ''}cards/`;
+
+async function persistCrop(uri: string): Promise<string> {
+  if (FileSystem.documentDirectory === null || FileSystem.documentDirectory === undefined) {
+    return uri; // no document dir (e.g. web) — keep the original uri
+  }
+  try {
+    await FileSystem.makeDirectoryAsync(CARD_DIR, { intermediates: true });
+  } catch {
+    // directory already exists — fine
+  }
+  const name = uri.split('/').pop() ?? `card-${uri.length}.jpg`;
+  const dest = `${CARD_DIR}${name}`;
+  await FileSystem.copyAsync({ from: uri, to: dest });
+  return dest;
+}
 
 export class CropCardGenProvider implements CardImageGenerationProvider {
   async generateCard(
@@ -38,6 +62,8 @@ export class CropCardGenProvider implements CardImageGenerationProvider {
       { compress: JPEG_QUALITY, format: ImageManipulator.SaveFormat.JPEG },
     );
 
-    return { publicImageUri: result.uri };
+    // Move it out of the cache so the collection thumbnail survives app restarts.
+    const publicImageUri = await persistCrop(result.uri);
+    return { publicImageUri };
   }
 }

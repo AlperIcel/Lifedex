@@ -63,7 +63,7 @@ type PipelineState =
   | { phase: 'idle' }
   | { phase: 'running' }
   | { phase: 'blocked'; reasons: string[] }
-  | { phase: 'duplicate'; species: string; sameSpotToday: boolean }
+  | { phase: 'duplicate'; species: string }
   | { phase: 'error'; message: string };
 
 /* ------------------------------------------------------------------ */
@@ -187,11 +187,9 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
           <View style={[styles.overlayIconWrap, styles.overlayIconWrapAccent]}>
             <Ionicons name="checkmark-circle" size={32} color={colors.accent} />
           </View>
-          <Text style={styles.overlayTitle}>Already discovered</Text>
+          <Text style={styles.overlayTitle}>Already found nearby</Text>
           <Text style={styles.overlayBody}>
-            {state.sameSpotToday
-              ? `You already logged ${state.species} near here today.`
-              : `${state.species} is already in your collection. Find a new species to earn XP!`}
+            {`You've already discovered ${state.species} in this area (within ~1 km). Move on and explore — find it somewhere new, or catch a different species, to earn XP!`}
           </Text>
           <Button
             title="View Collection"
@@ -375,7 +373,6 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
           setPipeline({
             phase: 'duplicate',
             species: result.species,
-            sameSpotToday: result.sameSpotToday,
           });
           return;
         }

@@ -14,6 +14,7 @@
  */
 import React, { useCallback, useMemo } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -120,9 +121,21 @@ function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () 
       onPress={onPress}
       style={({ pressed }) => [styles.discoveryCard, pressed && styles.cardPressed]}
     >
-      {/* Card image area — rarity tint + icon + bottom scrim */}
+      {/* Card image area — the real captured crop when available, else a
+          rarity-tinted category icon. Never renders the private original: this
+          is publicImageUri (an on-device subject crop), or a mock placeholder. */}
       <View style={[styles.cardImageArea, { backgroundColor: rarityTints[sighting.rarity] }]}>
-        <Ionicons name={icon} size={44} color={rarityColor} />
+        {sighting.publicImageUri.length > 0 &&
+        !sighting.publicImageUri.startsWith('mock-card://') ? (
+          <Image
+            source={{ uri: sighting.publicImageUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            accessibilityLabel={`Photo of ${sighting.commonName}`}
+          />
+        ) : (
+          <Ionicons name={icon} size={44} color={rarityColor} />
+        )}
         <LinearGradient colors={[...scrimGradient]} style={styles.cardScrim} pointerEvents="none" />
         {/* XP ring over image */}
         <View style={styles.cardXpBadge}>

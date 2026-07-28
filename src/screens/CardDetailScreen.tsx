@@ -21,6 +21,8 @@
  */
 import React, { useCallback } from 'react';
 import {
+  ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,6 +38,7 @@ import { MockCardImage } from '@/components/MockCardImage';
 import { RarityBadge } from '@/components/RarityBadge';
 import type { Rarity, Sighting } from '@/domain/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
+import { useLore } from '@/lib/lore';
 import {
   colors,
   radius,
@@ -171,6 +174,12 @@ export function CardDetailScreen({ route, navigation }: Props) {
     collectionCard !== undefined
       ? (getSightingById(collectionCard.sightingId) ?? null)
       : null;
+  // Species lore (Wikipedia, best-effort). Hook called unconditionally (before any
+  // early return); resolves to null offline / when there's no article.
+  const { lore, loading: loreLoading } = useLore(
+    sighting?.scientificName,
+    sighting?.commonName ?? '',
+  );
   // Store lookups are synchronous — no loading/error state needed.
   // isFirstDiscovery is not persisted on Sighting (see store notes); default false.
   const isFirstDiscovery = false;
@@ -231,13 +240,13 @@ export function CardDetailScreen({ route, navigation }: Props) {
           {/* Close affordance + rarity + share */}
           <View style={[styles.heroTopBar, { top: insets.top + spacing.md }]}>
             <Pressable
-              style={({ pressed }) => [styles.glassCircle, pressed && styles.glassCirclePressed]}
+              style={({ pressed }) => [styles.backCircle, pressed && styles.glassCirclePressed]}
               onPress={handleBack}
               hitSlop={12}
-              accessibilityLabel="Close"
+              accessibilityLabel="Back"
               accessibilityRole="button"
             >
-              <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
+              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
             </Pressable>
 
             <View style={styles.heroTopBarRight}>
@@ -329,10 +338,42 @@ export function CardDetailScreen({ route, navigation }: Props) {
             />
           </View>
 
-          {/* Description */}
+          {/* About — real species lore (Wikipedia); the generated blurb is the
+              offline / no-article fallback. */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>
-            <Text style={styles.descriptionText}>{card.description}</Text>
+            {loreLoading ? (
+              <View style={styles.loreLoading}>
+                <ActivityIndicator color={colors.textMuted} />
+              </View>
+            ) : (
+              <>
+                <Text style={styles.descriptionText}>
+                  {lore !== null ? lore.summary : card.description}
+                </Text>
+                {lore !== null && (
+                  <View style={styles.loreFooter}>
+                    <Text style={styles.loreSource}>
+                      {lore.description !== undefined
+                        ? `${lore.description} · via Wikipedia`
+                        : 'via Wikipedia'}
+                    </Text>
+                    {lore.url !== undefined && (
+                      <Pressable
+                        onPress={() => {
+                          void Linking.openURL(lore.url as string);
+                        }}
+                        hitSlop={8}
+                        accessibilityRole="link"
+                        accessibilityLabel="Read more on Wikipedia"
+                      >
+                        <Text style={styles.loreLink}>Read more →</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
           </View>
 
           {/* Safety notes */}
@@ -437,6 +478,18 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** Back button — high-contrast dark disc so the arrow is legible over any
+   * artwork (light or dark), not the near-invisible translucent glass circle. */
+  backCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -557,6 +610,27 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     lineHeight: 24,
+  },
+  loreLoading: {
+    paddingVertical: spacing.md,
+    alignItems: 'flex-start',
+  },
+  loreFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  loreSource: {
+    ...typography.caption,
+    color: colors.textMuted,
+    flexShrink: 1,
+  },
+  loreLink: {
+    ...typography.caption,
+    color: colors.teal,
+    fontWeight: '600',
   },
 
   /* ── Tint panels (safety + privacy) ── */

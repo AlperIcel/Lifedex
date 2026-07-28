@@ -61,8 +61,6 @@ export interface CreateSightingOk {
   cardId: string;
   /** Common name of the species (handy for duplicate messaging). */
   species: string;
-  /** Only meaningful when duplicate: re-catch of the same species nearby today. */
-  sameSpotToday: boolean;
 }
 
 export interface CreateSightingBlocked {
@@ -110,13 +108,13 @@ export async function createSightingFromImage(
   // are actually hidden/fuzzed even when the provider reported 'none'.
   const recognition = applySpeciesRule(rawRecognition);
 
-  // 2b. De-duplication — a species is registered once. A re-catch returns the
-  // existing entry without creating a new record or crediting XP.
+  // 2b. De-duplication — the same species within ~1 km is a re-catch: it returns
+  // the nearby entry without creating a new record or crediting XP. The SAME
+  // species further away is a fresh discovery (the "hunt" rule — see dedup.ts).
   const dedup = evaluateDedup({
     recognition,
     existing: lifeDexStore.listSightings(),
     location,
-    now: Date.now(),
   });
   if (dedup.alreadyDiscovered && dedup.existingSightingId !== undefined) {
     return {
@@ -126,7 +124,6 @@ export async function createSightingFromImage(
       sightingId: dedup.existingSightingId,
       cardId: `card-${dedup.existingSightingId}`,
       species: recognition.commonName,
-      sameSpotToday: dedup.sameSpotToday,
     };
   }
 
@@ -214,6 +211,5 @@ export async function createSightingFromImage(
     sightingId,
     cardId,
     species: recognition.commonName,
-    sameSpotToday: false,
   };
 }

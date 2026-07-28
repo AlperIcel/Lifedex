@@ -1,25 +1,28 @@
 /**
- * Species-level de-duplication.
+ * Species + location de-duplication ("discovery hunt" rule).
  *
- * A "dex" registers each species once. You should not be able to farm XP by
- * photographing the same tree (or the same species) ten times. This pure module
- * decides, from your existing collection, whether a new recognition is:
- *   - a NEW discovery (first time for this species), or
- *   - ALREADY discovered (a re-catch — no new card/XP).
+ * The game rewards MOVEMENT, not spam. A species may be caught again — but only
+ * if you've genuinely moved to a new area. Concretely:
+ *   - A capture is BLOCKED (a re-catch: no new card, no XP) when a prior sighting
+ *     of the SAME species already exists within NEARBY_METERS (~1 km).
+ *   - The same species FURTHER than that is a fresh discovery (new card + XP) —
+ *     find the fox in another valley and it counts again.
+ *   - This makes a zoo trip give you the monkey ONCE, not ten times, and stops
+ *     farming the tree in your garden.
  *
- * It also flags `sameSpotToday` (same species + nearby + within ~a day) so the UI
- * can say "you already logged this here today" vs the gentler "already in your
- * collection". True individual-animal recognition is out of scope (not reliable
- * across species); this is deliberately species-level + a light spam heuristic.
+ * Distance is measured against the PUBLIC (fuzzed) location — exact GPS is never
+ * stored. With ~200 m fuzz against a 1 km radius that is accurate enough. When a
+ * distance can't be measured (the new capture has no GPS, or a prior's location
+ * is hidden for species protection), we conservatively treat it as "nearby" and
+ * block — you can't farm a species by simply withholding your location.
  *
  * Matching is by scientific name when both sides have one, else by common name
  * (case-insensitive). Pure + deterministic — no I/O.
  */
 import type { GeoPoint, RecognitionResult, Sighting } from '@/domain/types';
 
-/** Distance (m) under which a re-catch counts as "the same spot". */
-export const SAME_SPOT_METERS = 500;
-const DAY_MS = 86_400_000;
+/** Radius (m) within which the same species counts as already discovered. */
+export const NEARBY_METERS = 1000;
 
 export interface DedupInput {
   recognition: RecognitionResult;
@@ -27,23 +30,23 @@ export interface DedupInput {
   existing: Sighting[];
   /** Raw GPS of the new capture, if available. */
   location?: GeoPoint;
-  /** Current time (ms). */
-  now: number;
+  /** Current time (ms). Unused by the location rule; kept for signature stability. */
+  now?: number;
 }
 
 export interface DedupResult {
-  /** True when this species is already in the collection (a re-catch). */
+  /**
+   * True when this capture is a re-catch that should be blocked: the same species
+   * already exists within NEARBY_METERS (or the species exists and the distance
+   * can't be measured). False means it's a fresh discovery to reward.
+   */
   alreadyDiscovered: boolean;
-  /** How many prior sightings of this species exist. */
+  /** How many prior sightings of this species exist (at any distance). */
   priorCount: number;
-  /** True when a prior of this species is within ~SAME_SPOT_METERS and ~a day. */
-  sameSpotToday: boolean;
-  /** Id of the existing sighting to point the UI at (first match), if any. */
+  /** Id of the nearby prior to point the UI at, when blocked. */
   existingSightingId?: string;
-}
-
-function speciesKey(commonName: string, scientificName?: string): string {
-  return (scientificName ?? commonName).trim().toLowerCase();
+  /** Distance (m) to the nearest measurable prior of this species, if any. */
+  nearestMeters?: number;
 }
 
 function sameSpecies(s: Sighting, r: RecognitionResult): boolean {
@@ -71,27 +74,38 @@ function distanceMeters(a: GeoPoint, b: { lat: number; lng: number }): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** Decide whether a recognition is a new discovery or a re-catch. */
-export function evaluateDedup({ recognition, existing, location, now }: DedupInput): DedupResult {
+/**
+ * Decide whether a recognition is a fresh discovery or a nearby re-catch.
+ * See the module header for the rule.
+ */
+export function evaluateDedup({ recognition, existing, location }: DedupInput): DedupResult {
   const priors = existing.filter((s) => sameSpecies(s, recognition));
-  const alreadyDiscovered = priors.length > 0;
-
-  let sameSpotToday = false;
-  if (alreadyDiscovered) {
-    sameSpotToday = priors.some((p) => {
-      const withinDay = Math.abs(now - new Date(p.createdAt).getTime()) < DAY_MS;
-      if (!withinDay) return false;
-      if (location === undefined) return true; // can't measure distance → treat as same spot
-      return distanceMeters(location, p.publicLocation) <= SAME_SPOT_METERS;
-    });
+  if (priors.length === 0) {
+    return { alreadyDiscovered: false, priorCount: 0 };
   }
+
+  let nearest: { id: string; meters: number } | undefined;
+  let unmeasurable = false;
+  for (const p of priors) {
+    if (location === undefined || p.publicLocation.hidden) {
+      // No GPS on this capture, or a protected prior with a hidden location —
+      // distance can't be trusted. Treat conservatively as "nearby".
+      unmeasurable = true;
+      continue;
+    }
+    const meters = distanceMeters(location, p.publicLocation);
+    if (nearest === undefined || meters < nearest.meters) {
+      nearest = { id: p.id, meters };
+    }
+  }
+
+  const withinRadius = nearest !== undefined && nearest.meters <= NEARBY_METERS;
+  const alreadyDiscovered = withinRadius || unmeasurable;
 
   return {
     alreadyDiscovered,
     priorCount: priors.length,
-    sameSpotToday,
-    existingSightingId: priors[0]?.id,
+    existingSightingId: alreadyDiscovered ? (nearest?.id ?? priors[0]?.id) : undefined,
+    nearestMeters: nearest?.meters,
   };
 }
-
-export { speciesKey };
