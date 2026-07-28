@@ -69,6 +69,7 @@ import type { Rarity, Category } from '@/domain/types';
 import { useT, useCommon, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useSettings, formatDistance } from '@/store/settings';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 /* ------------------------------------------------------------------ */
 /* i18n                                                                */
@@ -232,13 +233,20 @@ const CATEGORY_ICONS: Record<Category, keyof typeof Ionicons.glyphMap> = {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-function useXpCountUp(target: number, duration: number, active: boolean): number {
+function useXpCountUp(target: number, duration: number, active: boolean, reduceMotion: boolean): number {
   const [displayed, setDisplayed] = useState(0);
   const frameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const startRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!active || target === 0) return;
+
+    // Reduced motion: show the target value immediately — no count-up
+    // animation. Haptic/sound feedback lives in the caller and is unaffected.
+    if (reduceMotion) {
+      setDisplayed(target);
+      return;
+    }
 
     const tick = (now: number) => {
       if (startRef.current === null) startRef.current = now;
@@ -257,7 +265,7 @@ function useXpCountUp(target: number, duration: number, active: boolean): number
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       startRef.current = null;
     };
-  }, [target, duration, active]);
+  }, [target, duration, active, reduceMotion]);
 
   return displayed;
 }
@@ -304,16 +312,20 @@ function Reveal({ anim, style, children }: RevealProps): React.JSX.Element {
 function NewSpeciesBadge({
   rarity,
   active,
+  reduceMotion,
 }: {
   rarity: Rarity;
   active: boolean;
+  reduceMotion: boolean;
 }): React.JSX.Element {
   const t = useT(C);
   const pulse = useRef(new Animated.Value(1)).current;
   const color = rarityColors[rarity];
 
   useEffect(() => {
-    if (!active) return;
+    // Endless decorative pulse — skip it under reduced motion; `pulse` stays
+    // at its resting value (1), so the badge just sits still.
+    if (!active || reduceMotion) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
@@ -332,7 +344,7 @@ function NewSpeciesBadge({
     );
     loop.start();
     return () => loop.stop();
-  }, [active, pulse]);
+  }, [active, pulse, reduceMotion]);
 
   return (
     <Animated.View
@@ -353,15 +365,20 @@ function NewSpeciesBadge({
 
 function IdleFloat({
   settled,
+  reduceMotion,
   children,
 }: {
   settled: boolean;
+  reduceMotion: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   const float = useRef(new Animated.Value(0)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
+    // Endless decorative loop — skip it under reduced motion; `float` stays
+    // at 0, so the card sits still instead of idling.
+    if (reduceMotion) return;
     const sine = Easing.inOut(Easing.sin);
     const loop = Animated.loop(
       Animated.sequence([
@@ -388,11 +405,11 @@ function IdleFloat({
     loopRef.current = loop;
     loop.start();
     return () => loop.stop();
-  }, [float]);
+  }, [float, reduceMotion]);
 
   // Once the reveal completes, glide back to rest so the card sits still.
   useEffect(() => {
-    if (!settled) return;
+    if (!settled || reduceMotion) return;
     loopRef.current?.stop();
     Animated.timing(float, {
       toValue: 0,
@@ -400,7 +417,7 @@ function IdleFloat({
       easing: motion.easing.standard,
       useNativeDriver: true,
     }).start();
-  }, [settled, float]);
+  }, [settled, float, reduceMotion]);
 
   return (
     <Animated.View style={{ transform: [{ translateY: float }] }}>
@@ -731,10 +748,11 @@ interface CardFaceProps {
   card: CardMetadata;
   imageUri: string;
   flipped: boolean;
+  reduceMotion: boolean;
 }
 
 /** The visible face of the collectible card. */
-function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element {
+function CardFace({ card, imageUri, flipped, reduceMotion }: CardFaceProps): React.JSX.Element {
   const common = useCommon();
   const rarityColor = rarityColors[card.rarity];
 
@@ -788,7 +806,8 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
         </View>
       </View>
 
-      {flipped && <CardShimmer active rarity={card.rarity} />}
+      {/* Purely decorative — skip it entirely under reduced motion. */}
+      {flipped && !reduceMotion && <CardShimmer active rarity={card.rarity} />}
     </View>
   );
 }
@@ -796,11 +815,14 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
 /** Soft rarity-tinted glow behind the card back — pulses while the card
  * waits to flip, stronger for rarer catches (anticipation cue). Lives and
  * dies with CardBack's own mount cycle (unmounts once the flip crosses 90°). */
-function CardBackGlow({ rarity }: { rarity: Rarity }): React.JSX.Element {
+function CardBackGlow({ rarity, reduceMotion }: { rarity: Rarity; reduceMotion: boolean }): React.JSX.Element {
   const pulse = useRef(new Animated.Value(0)).current;
   const peak = CARD_BACK_GLOW_OPACITY[rarity];
 
   useEffect(() => {
+    // Endless decorative pulse — skip it under reduced motion; render at a
+    // steady peak glow instead (see `opacity` below) rather than animating.
+    if (reduceMotion) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
@@ -819,12 +841,14 @@ function CardBackGlow({ rarity }: { rarity: Rarity }): React.JSX.Element {
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reduceMotion]);
 
-  const opacity = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [peak * 0.45, peak],
-  });
+  const opacity = reduceMotion
+    ? peak
+    : pulse.interpolate({
+        inputRange: [0, 1],
+        outputRange: [peak * 0.45, peak],
+      });
 
   return (
     <Animated.View
@@ -836,12 +860,12 @@ function CardBackGlow({ rarity }: { rarity: Rarity }): React.JSX.Element {
 
 /** Card back — shown while the reveal waits. Tinted by rarity as an
  * anticipation cue (stronger tint = rarer catch), via CardBackGlow. */
-function CardBack({ rarity }: { rarity: Rarity }): React.JSX.Element {
+function CardBack({ rarity, reduceMotion }: { rarity: Rarity; reduceMotion: boolean }): React.JSX.Element {
   const t = useT(C);
   const color = rarityColors[rarity];
   return (
     <View style={[styles.cardFace, styles.cardBack]}>
-      <CardBackGlow rarity={rarity} />
+      <CardBackGlow rarity={rarity} reduceMotion={reduceMotion} />
       <View style={[styles.cardBackEmblem, { borderColor: color }]}>
         <Ionicons name="leaf-outline" size={36} color={color} />
       </View>
@@ -859,14 +883,37 @@ interface FlipCardProps {
   card: CardMetadata;
   imageUri: string;
   onFlipComplete: () => void;
+  reduceMotion: boolean;
 }
 
 /** Flip-in animation container — starts showing back, flips to reveal face. */
-function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.Element {
+function FlipCard({ card, imageUri, onFlipComplete, reduceMotion }: FlipCardProps): React.JSX.Element {
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [showFront, setShowFront] = useState(false);
+  // Guards onFlipComplete against firing twice (e.g. if reduceMotion changes
+  // mid-flight right after the async OS check resolves) — mirrors the
+  // closingRef pattern used by LevelUpOverlay/AchievementToast.
+  const completedRef = useRef(false);
+
+  const fireComplete = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    onFlipComplete();
+  }, [onFlipComplete]);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // Reduced motion: skip the hold + overshoot flip entirely. Jump the
+      // driver straight to its end value (no observable animation) and
+      // reveal the front face immediately — the user sees the finished
+      // card, just without the motion. The completion callback still fires
+      // so haptics/sound/phase transition behave identically either way.
+      flipAnim.setValue(180);
+      setShowFront(true);
+      fireComplete();
+      return;
+    }
+
     // Hold on the floating card back for a beat before the flip — epic/
     // legendary linger longer (more suspense) and then flip slower/heavier.
     const t = setTimeout(() => {
@@ -876,11 +923,11 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.
         easing: motion.easing.overshoot,
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) onFlipComplete();
+        if (finished) fireComplete();
       });
     }, FLIP_HOLD_BY_RARITY[card.rarity]);
     return () => clearTimeout(t);
-  }, [flipAnim, onFlipComplete, card.rarity]);
+  }, [reduceMotion, flipAnim, card.rarity, fireComplete]);
 
   // At 90° the card passes through the "invisible" point — we swap sides then.
   useEffect(() => {
@@ -910,7 +957,7 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.
             { backfaceVisibility: 'hidden', transform: [{ rotateY: backRotate }] },
           ]}
         >
-          <CardBack rarity={card.rarity} />
+          <CardBack rarity={card.rarity} reduceMotion={reduceMotion} />
         </Animated.View>
       )}
 
@@ -925,7 +972,7 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.
           },
         ]}
       >
-        <CardFace card={card} imageUri={imageUri} flipped={showFront} />
+        <CardFace card={card} imageUri={imageUri} flipped={showFront} reduceMotion={reduceMotion} />
       </Animated.View>
     </View>
   );
@@ -1058,25 +1105,31 @@ function XpBanner({
   xp,
   rarity,
   countActive,
+  reduceMotion,
 }: {
   xp: number;
   rarity: Rarity;
   countActive: boolean;
+  reduceMotion: boolean;
 }): React.JSX.Element {
-  const displayed = useXpCountUp(xp, XP_COUNT_DURATION, countActive);
+  const displayed = useXpCountUp(xp, XP_COUNT_DURATION, countActive, reduceMotion);
   const progress = useRef(new Animated.Value(0)).current;
   const rarityColor = rarityColors[rarity];
 
   // Hairline fills in sync with the count-up (same duration + ease-out cubic).
   useEffect(() => {
     if (!countActive || xp === 0) return;
+    if (reduceMotion) {
+      progress.setValue(1);
+      return;
+    }
     Animated.timing(progress, {
       toValue: 1,
       duration: XP_COUNT_DURATION,
       easing: motion.easing.decel,
       useNativeDriver: true,
     }).start();
-  }, [countActive, xp, progress]);
+  }, [countActive, xp, progress, reduceMotion]);
 
   const fillTranslate = progress.interpolate({
     inputRange: [0, 1],
@@ -1126,6 +1179,7 @@ const ACHIEVEMENT_AFTER_LEVEL_UP_DELAY = 250;
 export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
   const t = useT(C);
   const flavorFor = useRarityFlavor();
+  const reduceMotion = useReduceMotion();
   const { sightingId } = route.params;
 
   // Synchronous store lookup — no async, no pipeline.
@@ -1288,21 +1342,25 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
       >
         {/* ---- The card — the star of the screen ---- */}
         <View style={styles.cardWrapper}>
-          <RaritySunburst rarity={rarity} visible={isRevealed} />
+          {/* Purely decorative — skip entirely under reduced motion. */}
+          {!reduceMotion && <RaritySunburst rarity={rarity} visible={isRevealed} />}
           <RarityGlow rarity={rarity} visible={isRevealed} />
-          <IdleFloat settled={isRevealed}>
+          <IdleFloat settled={isRevealed} reduceMotion={reduceMotion}>
             <FlipCard
               card={card}
               imageUri={publicImageUri}
               onFlipComplete={handleFlipComplete}
+              reduceMotion={reduceMotion}
             />
           </IdleFloat>
-          <RarityParticles rarity={rarity} visible={isRevealed} />
+          {!reduceMotion && <RarityParticles rarity={rarity} visible={isRevealed} />}
         </View>
 
         {/* ---- Species name (revealed after the flip) ---- */}
         <Reveal anim={revealAnims[0]!}>
-          {isFirstDiscovery && <NewSpeciesBadge rarity={rarity} active={isRevealed} />}
+          {isFirstDiscovery && (
+            <NewSpeciesBadge rarity={rarity} active={isRevealed} reduceMotion={reduceMotion} />
+          )}
           <Text style={styles.speciesName}>{sighting.commonName}</Text>
           <Text style={[styles.rarityFlavor, { color: rarityColors[rarity] }]}>
             {flavorFor(rarity)}
@@ -1332,7 +1390,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
 
         {/* ---- XP Banner with synced hairline ---- */}
         <Reveal anim={revealAnims[3]!}>
-          <XpBanner xp={sighting.xp} rarity={rarity} countActive={isRevealed} />
+          <XpBanner xp={sighting.xp} rarity={rarity} countActive={isRevealed} reduceMotion={reduceMotion} />
         </Reveal>
 
         {/* ---- Safety notes + card description ---- */}

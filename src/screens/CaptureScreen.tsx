@@ -42,6 +42,7 @@ import { MOCK_HINTS, type MockHint } from '@/providers/mock/mockVision';
 import { env } from '@/config/env';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { Button, Chip } from '@/components';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
 import { haptics } from '@/utils/haptics';
 import { sound } from '@/utils/sound';
@@ -160,10 +161,13 @@ function FramingHint(): React.ReactElement {
  * progress (moderate → recognize → score → card) without claiming to track
  * real phase boundaries. Purely decorative motion — loops while mounted.
  */
-function PhaseProgressDots(): React.ReactElement {
+function PhaseProgressDots({ reduceMotion }: { reduceMotion: boolean }): React.ReactElement {
   const anims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
+    // Endless decorative loop — skip it under reduced motion; the dots render
+    // as a plain static row instead (see below).
+    if (reduceMotion) return;
     const stagger = Animated.loop(
       Animated.stagger(
         150,
@@ -177,7 +181,17 @@ function PhaseProgressDots(): React.ReactElement {
     );
     stagger.start();
     return () => stagger.stop();
-  }, [anims]);
+  }, [anims, reduceMotion]);
+
+  if (reduceMotion) {
+    return (
+      <View style={styles.phaseRow}>
+        {anims.map((_, i) => (
+          <View key={i} style={styles.phaseDot} />
+        ))}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.phaseRow}>
@@ -201,9 +215,15 @@ interface PipelineOverlayProps {
   state: PipelineState;
   onDismiss: () => void;
   onViewCollection: () => void;
+  reduceMotion: boolean;
 }
 
-function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlayProps): React.ReactElement | null {
+function PipelineOverlay({
+  state,
+  onDismiss,
+  onViewCollection,
+  reduceMotion,
+}: PipelineOverlayProps): React.ReactElement | null {
   const t = useT(C);
   if (state.phase === 'idle') return null;
 
@@ -213,7 +233,7 @@ function PipelineOverlay({ state, onDismiss, onViewCollection }: PipelineOverlay
         <View style={styles.overlayCard}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.overlayTitle}>{t('identifying')}</Text>
-          <PhaseProgressDots />
+          <PhaseProgressDots reduceMotion={reduceMotion} />
         </View>
       </View>
     );
@@ -358,6 +378,7 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
 
 export default function CaptureScreen({ navigation }: Props): React.ReactElement {
   const t = useT(C);
+  const reduceMotion = useReduceMotion();
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -456,13 +477,16 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
   const handleCapture = useCallback(async () => {
     if (captureActive || cameraRef.current === null) return;
 
-    // Shutter animation
+    // Shutter feedback — haptic/sound always fire; the visual squish is
+    // decorative and minimal/off under reduced motion.
     haptics.shutter();
     sound.shutter();
-    Animated.sequence([
-      Animated.timing(shutterScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
-      Animated.timing(shutterScale, { toValue: 1, duration: 80, useNativeDriver: true }),
-    ]).start();
+    if (!reduceMotion) {
+      Animated.sequence([
+        Animated.timing(shutterScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
+        Animated.timing(shutterScale, { toValue: 1, duration: 80, useNativeDriver: true }),
+      ]).start();
+    }
 
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
@@ -473,7 +497,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       haptics.error();
       setPipeline({ phase: 'error', message: t('failedToTakePhoto') });
     }
-  }, [captureActive, runPipeline, shutterScale, t]);
+  }, [captureActive, runPipeline, shutterScale, t, reduceMotion]);
 
   /* ---------- Flip ---------- */
   const handleFlip = useCallback(() => {
@@ -599,6 +623,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         state={pipeline}
         onDismiss={handleDismiss}
         onViewCollection={handleViewCollection}
+        reduceMotion={reduceMotion}
       />
     </View>
   );

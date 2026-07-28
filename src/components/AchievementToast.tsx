@@ -24,6 +24,7 @@ import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { achievementIcon, achievementTitle } from '@/domain/achievementLabels';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { useLang, useT } from '@/i18n';
 import { colors, elevation, motion, radius, spacing, typography } from '@/theme/theme';
 
@@ -65,22 +66,33 @@ export function AchievementToast({
 }: AchievementToastProps): React.JSX.Element | null {
   const t = useT(C);
   const lang = useLang();
+  const reduceMotion = useReduceMotion();
   const stackAnim = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
 
   useEffect(() => {
     if (ids.length === 0) return;
 
-    Animated.timing(stackAnim, {
-      toValue: 1,
-      duration: motion.duration.slow,
-      easing: motion.easing.decel,
-      useNativeDriver: true,
-    }).start();
+    if (reduceMotion) {
+      // Reduced motion: show the stack immediately — no fade/rise-in.
+      stackAnim.setValue(1);
+    } else {
+      Animated.timing(stackAnim, {
+        toValue: 1,
+        duration: motion.duration.slow,
+        easing: motion.easing.decel,
+        useNativeDriver: true,
+      }).start();
+    }
 
     const dismissTimer = setTimeout(() => {
       if (closingRef.current) return;
       closingRef.current = true;
+      if (reduceMotion) {
+        stackAnim.setValue(0);
+        onDone();
+        return;
+      }
       Animated.timing(stackAnim, {
         toValue: 0,
         duration: motion.duration.base,
@@ -92,10 +104,11 @@ export function AchievementToast({
     }, AUTO_DISMISS_MS);
 
     return () => clearTimeout(dismissTimer);
-    // Mount-once entrance/auto-dismiss timeline for this fixed `ids` batch —
-    // intentionally excludes onDone/stackAnim (stable refs) from deps.
+    // Entrance/auto-dismiss timeline for this fixed `ids` batch — intentionally
+    // excludes onDone/stackAnim (stable refs) from deps; reduceMotion is
+    // included so this can react once the async OS check resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids.length]);
+  }, [ids.length, reduceMotion]);
 
   if (ids.length === 0) return null;
 
@@ -112,6 +125,7 @@ export function AchievementToast({
           index={i}
           label={t('unlocked', { title: achievementTitle(id, lang) })}
           icon={achievementIcon(id)}
+          reduceMotion={reduceMotion}
           onRevealed={onRowRevealed !== undefined ? () => onRowRevealed(id, i) : undefined}
         />
       ))}
@@ -123,11 +137,13 @@ function ToastRow({
   index,
   label,
   icon,
+  reduceMotion,
   onRevealed,
 }: {
   index: number;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  reduceMotion: boolean;
   onRevealed?: () => void;
 }): React.JSX.Element {
   const enter = useRef(new Animated.Value(0)).current;
@@ -135,6 +151,11 @@ function ToastRow({
   useEffect(() => {
     const timer = setTimeout(() => {
       onRevealed?.();
+      if (reduceMotion) {
+        // Reduced motion: land at rest immediately — no overshoot pop.
+        enter.setValue(1);
+        return;
+      }
       Animated.timing(enter, {
         toValue: 1,
         duration: motion.duration.slow,
@@ -143,9 +164,11 @@ function ToastRow({
       }).start();
     }, index * ROW_STAGGER_MS);
     return () => clearTimeout(timer);
-    // Mount-once per row — index/onRevealed are fixed for this row's lifetime.
+    // Per-row entrance timer — index/onRevealed are fixed for this row's
+    // lifetime; reduceMotion is included so this can react once the async OS
+    // check resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reduceMotion]);
 
   const scale = enter.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
 

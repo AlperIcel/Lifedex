@@ -26,6 +26,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { LevelRing } from '@/components/LevelRing';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { haptics } from '@/utils/haptics';
 import { levelBounds, useLifeDexStore } from '@/store/useLifeDexStore';
 import { colors, motion, radius, spacing, typography } from '@/theme/theme';
@@ -79,6 +80,7 @@ interface LevelUpOverlayProps {
 
 export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React.JSX.Element {
   const t = useT(C);
+  const reduceMotion = useReduceMotion();
   const { profile } = useLifeDexStore();
   const bounds = levelBounds(profile.xp);
 
@@ -86,6 +88,9 @@ export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React
   // Ref (not state) so the guard is always live even inside the stale closure
   // captured by the mount-effect's auto-dismiss timer below.
   const closingRef = useRef(false);
+  // Guards the success haptic against firing twice if reduceMotion changes
+  // mid-flight, right after the async OS check resolves.
+  const burstFiredRef = useRef(false);
 
   const entrance = useRef(new Animated.Value(0)).current;
   const burst = useRef(new Animated.Value(0)).current;
@@ -95,6 +100,12 @@ export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React
   const close = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+    if (reduceMotion) {
+      // Reduced motion: dismiss immediately — no fade/scale-out.
+      entrance.setValue(0);
+      onDismiss();
+      return;
+    }
     Animated.timing(entrance, {
       toValue: 0,
       duration: motion.duration.base,
@@ -103,9 +114,26 @@ export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React
     }).start(({ finished }) => {
       if (finished) onDismiss();
     });
-  }, [entrance, onDismiss]);
+  }, [entrance, onDismiss, reduceMotion]);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // Reduced motion: skip the entrance fade/scale, the ring's own delayed
+      // fill, the overflow burst, and the number spring — jump straight to
+      // the "landed" end state (full entrance, final ring progress, caption
+      // visible, at-rest number scale). The success haptic and the
+      // auto-dismiss/tap-to-continue behaviour are unchanged.
+      entrance.setValue(1);
+      setRingTarget(bounds.progress);
+      captionAnim.setValue(1);
+      if (!burstFiredRef.current) {
+        burstFiredRef.current = true;
+        haptics.success();
+      }
+      const dismissTimer = setTimeout(close, AUTO_DISMISS_MS);
+      return () => clearTimeout(dismissTimer);
+    }
+
     Animated.timing(entrance, {
       toValue: 1,
       duration: motion.duration.base,
@@ -116,7 +144,10 @@ export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React
     const fillTimer = setTimeout(() => setRingTarget(bounds.progress), RING_FILL_DELAY);
 
     const burstTimer = setTimeout(() => {
-      haptics.success();
+      if (!burstFiredRef.current) {
+        burstFiredRef.current = true;
+        haptics.success();
+      }
       Animated.parallel([
         Animated.timing(burst, {
           toValue: 1,
@@ -158,10 +189,12 @@ export function LevelUpOverlay({ level, onDismiss }: LevelUpOverlayProps): React
       clearTimeout(captionTimer);
       clearTimeout(dismissTimer);
     };
-    // Mount-once timeline — intentionally excludes fast-changing deps (close,
-    // bounds.progress) so it never re-schedules mid-animation.
+    // Timeline effect keyed only on reduceMotion — intentionally excludes
+    // other fast-changing deps (close, bounds.progress, the Animated.Values)
+    // so it never re-schedules mid-animation, only reacts to the OS setting
+    // resolving/changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reduceMotion]);
 
   const burstScale = burst.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.7] });
   const burstOpacity = burst.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.85, 0] });
