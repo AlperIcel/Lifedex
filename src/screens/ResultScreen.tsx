@@ -45,6 +45,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation/types';
 import type { CardMetadata, Sighting } from '@/domain/types';
 import { env } from '@/config/env';
+import { AchievementToast } from '@/components/AchievementToast';
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { LevelUpOverlay } from '@/components/LevelUpOverlay';
@@ -1117,6 +1118,11 @@ const REVEAL_GROUPS = 6;
  * competing animation. */
 const LEVEL_UP_REVEAL_DELAY = XP_COUNT_DURATION + 300;
 
+/** Beat after the level-up takeover is dismissed before the achievement
+ * unlock toast appears — keeps the two celebrations sequential, never
+ * overlapping. */
+const ACHIEVEMENT_AFTER_LEVEL_UP_DELAY = 250;
+
 export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
   const t = useT(C);
   const flavorFor = useRarityFlavor();
@@ -1169,8 +1175,45 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
     return () => clearTimeout(t);
   }, [isRevealed, pendingLevel]);
 
+  // Achievement unlock toast: read-and-clear the store's pending queue ONCE on
+  // mount (direct singleton call, same one-shot pattern as consumeLevelUp
+  // above) — never re-run, so a newly-unlocked batch is shown exactly once.
+  const [pendingAchievementIds, setPendingAchievementIds] = useState<string[]>([]);
+  const [achievementToastVisible, setAchievementToastVisible] = useState(false);
+
+  useEffect(() => {
+    const ids = lifeDexStore.consumeAchievements();
+    if (ids.length > 0) setPendingAchievementIds(ids);
+  }, []);
+
+  // Show the toast once the reveal has settled — but ONLY when there is no
+  // level-up this catch. When there IS one, handleDismissLevelUp triggers the
+  // toast instead, so the two celebrations never compete for the screen.
+  useEffect(() => {
+    if (!isRevealed || pendingAchievementIds.length === 0 || pendingLevel !== null) return;
+    const t = setTimeout(() => {
+      setAchievementToastVisible(true);
+    }, LEVEL_UP_REVEAL_DELAY);
+    return () => clearTimeout(t);
+  }, [isRevealed, pendingAchievementIds, pendingLevel]);
+
   const handleDismissLevelUp = useCallback(() => {
     setLevelUpVisible(false);
+    if (pendingAchievementIds.length > 0) {
+      setTimeout(() => setAchievementToastVisible(true), ACHIEVEMENT_AFTER_LEVEL_UP_DELAY);
+    }
+  }, [pendingAchievementIds]);
+
+  const handleAchievementToastDone = useCallback(() => {
+    setAchievementToastVisible(false);
+  }, []);
+
+  // Fires once PER unlocked achievement, in sync with that row's entrance —
+  // mirrors handleFlipComplete below (the child animation calls back, the
+  // screen owns the actual haptic/sound feedback).
+  const handleAchievementRowRevealed = useCallback(() => {
+    haptics.success();
+    sound.uiTap();
   }, []);
 
   const handleFlipComplete = useCallback(() => {
@@ -1328,6 +1371,15 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
         {/* Bottom padding */}
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+
+      {/* ---- Achievement unlock toast — compact, non-blocking, stacked ---- */}
+      {achievementToastVisible && pendingAchievementIds.length > 0 && (
+        <AchievementToast
+          ids={pendingAchievementIds}
+          onDone={handleAchievementToastDone}
+          onRowRevealed={handleAchievementRowRevealed}
+        />
+      )}
 
       {/* ---- Level-up takeover — grand finale, only after the reveal settles ---- */}
       {levelUpVisible && pendingLevel !== null && (

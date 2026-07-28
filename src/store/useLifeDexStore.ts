@@ -24,6 +24,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { computeAchievements } from '@/domain/achievements';
 import { buildCardMetadata } from '@/domain/cardMetadata';
 import { dailyQuestsFor, DAILY_REWARD_XP } from '@/domain/dailyQuests';
 import { getPublicLocation } from '@/domain/locationPrivacy';
@@ -42,6 +43,7 @@ import {
 } from '@/screens/leaderboard/mockData';
 import {
   loadDailyRewardMeta,
+  loadStreakMeta,
   loadUserCaptures,
   saveDailyRewardMeta,
   saveUserCaptures,
@@ -100,6 +102,17 @@ export interface LifeDexState {
    * level-ups as if they just happened).
    */
   pendingLevelUp: number | null;
+  /**
+   * Ids (src/domain/achievements.ts stable ids) of achievements newly unlocked
+   * by LIVE addSighting() call(s) and not yet shown to the UI. Mirrors
+   * `pendingLevelUp`'s read-and-clear queue pattern — see `consumeAchievements()`
+   * — so ResultScreen's unlock toast fires exactly once per newly-earned badge.
+   * Appended to (not replaced) so nothing is lost if the player captures again
+   * before the previous batch was consumed. Never populated by hydrate()'s
+   * replay of persisted captures on app start (same reasoning as
+   * `pendingLevelUp`: replaying history must never look like it "just happened").
+   */
+  pendingAchievements: string[];
   /**
    * dayKey ('YYYY-MM-DD') of the last claimed daily-quest reward, or null if
    * never claimed. Unlike the ad-hoc streak load (HomeScreen loads
@@ -256,6 +269,18 @@ export function levelBounds(xp: number): LevelBounds {
   return { level, floor, ceil, progress, toNext: Math.max(0, ceil - xp) };
 }
 
+/**
+ * Small flat XP bonus credited per NEWLY unlocked achievement (see
+ * src/domain/achievements.ts), the instant `addSighting` detects the unlock.
+ * Deliberately NOT routed through scoring.ts (that engine scores capture
+ * quality) — this mirrors DAILY_REWARD_XP's role as a separate engagement
+ * reward, applied via the store's own xpToLevel math. Kept below a single
+ * 'uncommon' catch (30 XP — see scoring.ts's BASE_XP) so real photography
+ * stays the primary progression path, while several achievements unlocking
+ * from one catch still stack into a noticeable bonus.
+ */
+export const ACHIEVEMENT_XP = 15;
+
 /* ------------------------------------------------------------------ */
 /* Initial state                                                       */
 /* ------------------------------------------------------------------ */
@@ -291,6 +316,7 @@ function createInitialState(): LifeDexState {
     loading: false,
     error: null,
     pendingLevelUp: null,
+    pendingAchievements: [],
     dailyRewardClaimedDayKey: null,
   };
 }
@@ -314,6 +340,18 @@ class LifeDexStore {
 
   /** Tracks the latest persist write so tests/callers can await it via flush(). */
   private persistPromise: Promise<void> = Promise.resolve();
+
+  /**
+   * Last streak value seen by `addSighting` — defaults to 0 until the first
+   * live capture, or until `hydrate()` loads the real persisted value. Used
+   * ONLY as the "before" snapshot streak when diffing achievements (see
+   * `addSighting`): reusing THIS call's own (already-advanced) streak for both
+   * the before/after snapshot would make the 'streak-7' achievement's unlock
+   * undetectable — it's the one achievement that depends on `streak` and not
+   * on `state.sightings`, so it never differs within a single call unless the
+   * "before" side remembers the PREVIOUS value instead.
+   */
+  private lastStreak = 0;
 
   getSnapshot = (): LifeDexState => this.state;
 
@@ -351,12 +389,21 @@ class LifeDexStore {
   }
 
   /**
-   * Persist exactly one Sighting + one CollectionCard and credit XP.
-   * Idempotent on sighting id. If `card` is omitted it is derived from the
-   * sighting. The capture is also written to local storage so it survives an
-   * app restart (best-effort; never blocks). Returns the persisted ids.
+   * Persist exactly one Sighting + one CollectionCard, credit XP, and detect
+   * any newly-unlocked achievements. Idempotent on sighting id. If `card` is
+   * omitted it is derived from the sighting. `streak` is the caller's current
+   * daily capture streak (sightingPipeline.ts already computes it via
+   * `nextStreak` for scoring — pass the same value through here so
+   * 'streak-7' can be diffed); defaults to 0 for callers that don't track it
+   * (tests, seed/hydrate paths). The capture is also written to local storage
+   * so it survives an app restart (best-effort; never blocks). Returns the
+   * persisted ids.
    */
-  addSighting(sighting: Sighting, card?: CollectionCard): { sightingId: string; cardId: string } {
+  addSighting(
+    sighting: Sighting,
+    card?: CollectionCard,
+    streak = 0,
+  ): { sightingId: string; cardId: string } {
     const existing = this.sightingIndex.get(sighting.id);
     if (existing !== undefined) {
       const existingCard = this.state.collectionCards.find((c) => c.sightingId === sighting.id);
@@ -366,15 +413,47 @@ class LifeDexStore {
       };
     }
 
+    // Achievement diff, "before" snapshot — sightings prior to this capture,
+    // and the LAST known streak (NOT this call's `streak`; see `lastStreak`'s
+    // doc comment for why that distinction is what makes 'streak-7'
+    // detectable on the exact capture that advances it).
+    const unlockedBefore = new Set(
+      computeAchievements(this.state.sightings, this.lastStreak)
+        .filter((a) => a.unlocked)
+        .map((a) => a.id),
+    );
+
     const collectionCard = card ?? cardFromSighting(sighting);
     const levelBefore = this.state.profile.level;
     this.applyCapture(sighting, collectionCard);
-    const levelAfter = this.state.profile.level;
 
-    // Live level-up: flag it for the UI. Deliberately NOT done inside
+    // Achievement diff, "after" snapshot — sightings now include this
+    // capture, and `streak` is this call's freshly-advanced value. Anything
+    // that flips locked -> unlocked was newly earned by this exact action.
+    const newlyUnlocked = computeAchievements(this.state.sightings, streak).filter(
+      (a) => a.unlocked && !unlockedBefore.has(a.id),
+    );
+    this.lastStreak = streak;
+
+    if (newlyUnlocked.length > 0) {
+      const bumpedXp = this.state.profile.xp + newlyUnlocked.length * ACHIEVEMENT_XP;
+      this.state = {
+        ...this.state,
+        profile: { ...this.state.profile, xp: bumpedXp, level: xpToLevel(bumpedXp) },
+        pendingAchievements: [
+          ...this.state.pendingAchievements,
+          ...newlyUnlocked.map((a) => a.id),
+        ],
+      };
+    }
+
+    // Live level-up: flag it for the UI. Checked AFTER any achievement bonus
+    // XP above, so a bonus that itself crosses (or extends past) a level
+    // boundary is reflected in the level shown. Deliberately NOT done inside
     // applyCapture() itself, since that helper is shared with hydrate()'s
     // replay of persisted captures on app start — replaying history must
     // never look like a level-up that "just happened".
+    const levelAfter = this.state.profile.level;
     if (levelAfter > levelBefore) {
       this.state = { ...this.state, pendingLevelUp: levelAfter };
     }
@@ -398,6 +477,19 @@ class LifeDexStore {
     if (level === null) return null;
     this.setState({ ...this.state, pendingLevelUp: null });
     return level;
+  }
+
+  /**
+   * Read-and-clear the pending achievement-unlock queue. Returns the ids
+   * (src/domain/achievements.ts) newly unlocked since the last consume, or []
+   * if none are pending. Call once (e.g. on ResultScreen mount) so the unlock
+   * toast shows each newly-earned badge exactly once.
+   */
+  consumeAchievements(): string[] {
+    if (this.state.pendingAchievements.length === 0) return [];
+    const ids = this.state.pendingAchievements;
+    this.setState({ ...this.state, pendingAchievements: [] });
+    return ids;
   }
 
   /**
@@ -440,9 +532,10 @@ class LifeDexStore {
    * dayKey is a no-op.
    */
   async hydrate(): Promise<void> {
-    const [loaded, dailyReward] = await Promise.all([
+    const [loaded, dailyReward, streakMeta] = await Promise.all([
       loadUserCaptures(),
       loadDailyRewardMeta(),
+      loadStreakMeta(),
     ]);
     let changed = false;
 
@@ -462,6 +555,12 @@ class LifeDexStore {
       this.state = { ...this.state, dailyRewardClaimedDayKey: dailyReward.lastClaimedDayKey };
       changed = true;
     }
+
+    // Seed the achievement-diff baseline with the REAL persisted streak so
+    // the first live capture after app start diffs against the true prior
+    // value (not the class default of 0) — otherwise a returning player with
+    // an existing 7+ day streak would spuriously re-earn 'streak-7'.
+    this.lastStreak = streakMeta.streak;
 
     if (changed) this.emit();
   }
@@ -516,6 +615,7 @@ class LifeDexStore {
     this.state = createInitialState();
     this.sightingIndex = new Map(this.state.sightings.map((s) => [s.id, s]));
     this.userCaptures = [];
+    this.lastStreak = 0;
     this.emit();
   }
 }
@@ -557,7 +657,11 @@ export function selectDailyRewardClaimed(state: LifeDexState, dayKey: string): b
 /* ------------------------------------------------------------------ */
 
 export interface UseLifeDexStore extends LifeDexState {
-  addSighting: (s: Sighting, card?: CollectionCard) => { sightingId: string; cardId: string };
+  addSighting: (
+    s: Sighting,
+    card?: CollectionCard,
+    streak?: number,
+  ) => { sightingId: string; cardId: string };
   getSightingById: (id: string) => Sighting | undefined;
   getCardById: (id: string) => CollectionCard | undefined;
   listCollection: () => CollectionCard[];
@@ -569,6 +673,7 @@ export interface UseLifeDexStore extends LifeDexState {
   setError: (e: string | null) => void;
   reset: () => void;
   consumeLevelUp: () => number | null;
+  consumeAchievements: () => string[];
   claimDailyReward: (dayKey: string) => DailyRewardClaimResult;
 }
 
@@ -585,7 +690,7 @@ export function useLifeDexStore(): UseLifeDexStore {
 
   return {
     ...state,
-    addSighting: (s, card) => lifeDexStore.addSighting(s, card),
+    addSighting: (s, card, streak) => lifeDexStore.addSighting(s, card, streak),
     getSightingById: (id) => lifeDexStore.getSightingById(id),
     getCardById: (id) => lifeDexStore.getCardById(id),
     listCollection: () => lifeDexStore.listCollection(),
@@ -597,6 +702,7 @@ export function useLifeDexStore(): UseLifeDexStore {
     setError: (e) => lifeDexStore.setError(e),
     reset: () => lifeDexStore.reset(),
     consumeLevelUp: () => lifeDexStore.consumeLevelUp(),
+    consumeAchievements: () => lifeDexStore.consumeAchievements(),
     claimDailyReward: (dayKey) => lifeDexStore.claimDailyReward(dayKey),
   };
 }

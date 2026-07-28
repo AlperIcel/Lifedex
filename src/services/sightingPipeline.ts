@@ -203,7 +203,7 @@ export async function createSightingFromImage(
     createdAt: sighting.createdAt,
   };
 
-  const { cardId } = lifeDexStore.addSighting(sighting, collectionCard);
+  const { cardId } = lifeDexStore.addSighting(sighting, collectionCard, streak);
 
   // Persist the advanced streak now that a new species was actually recorded.
   void saveStreakMeta({ lastCaptureISO: nowISO, streak });

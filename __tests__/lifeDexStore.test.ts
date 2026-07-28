@@ -19,6 +19,7 @@ import {
   selectRecentDiscoveries,
   selectTodayCount,
   selectTotalSpecies,
+  ACHIEVEMENT_XP,
 } from '../src/store/useLifeDexStore';
 import type { CollectionCard } from '../src/store/useLifeDexStore';
 import type { Sighting } from '../src/domain/types';
@@ -75,6 +76,13 @@ function makeCard(sightingId: string, sighting: Sighting): CollectionCard {
     createdAt: sighting.createdAt,
   };
 }
+
+/**
+ * A fixed, well-past date so a test capture never counts toward "today" —
+ * avoids incidentally tripping the 'today-3' achievement (src/domain/
+ * achievements.ts) in tests that aren't about achievements at all.
+ */
+const LONG_AGO_ISO = new Date(Date.now() - 60 * 24 * 3_600_000).toISOString();
 
 /* ------------------------------------------------------------------ */
 /* Setup                                                               */
@@ -235,9 +243,13 @@ describe('XP and level', () => {
 
   it('accumulates XP across multiple adds', () => {
     const baseline = lifeDexStore.getSnapshot().profile.xp;
-    lifeDexStore.addSighting(makeSighting({ id: 'xp-2a', xp: 100 }));
-    lifeDexStore.addSighting(makeSighting({ id: 'xp-2b', xp: 150 }));
-    lifeDexStore.addSighting(makeSighting({ id: 'xp-2c', xp: 50 }));
+    // Past-dated so 3 same-day captures don't incidentally cross the
+    // 'today-3' achievement threshold and add an unrelated XP bonus — this
+    // test is purely about capture-XP accumulation (see the dedicated
+    // "achievement unlocks" describe block below for that XP bonus).
+    lifeDexStore.addSighting(makeSighting({ id: 'xp-2a', xp: 100, createdAt: LONG_AGO_ISO }));
+    lifeDexStore.addSighting(makeSighting({ id: 'xp-2b', xp: 150, createdAt: LONG_AGO_ISO }));
+    lifeDexStore.addSighting(makeSighting({ id: 'xp-2c', xp: 50, createdAt: LONG_AGO_ISO }));
     expect(lifeDexStore.getSnapshot().profile.xp).toBe(baseline + 300);
   });
 
@@ -295,6 +307,112 @@ describe('level-up detection', () => {
     lifeDexStore.consumeLevelUp(); // clear it
     lifeDexStore.addSighting(s); // same id again — no-op per idempotency rules
     expect(lifeDexStore.consumeLevelUp()).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Achievement unlocks (pendingAchievements / consumeAchievements)     */
+/* ------------------------------------------------------------------ */
+
+describe('achievement unlocks (pendingAchievements / consumeAchievements)', () => {
+  it('does not flag anything already unlocked by the seeded baseline', () => {
+    // A single ordinary capture: totals move 15 -> 16 (finds-25 stays locked),
+    // unique species 15 -> 16 (species-25 stays locked). Everything else
+    // (first-find, species-10, all-categories, first-rare/epic/legendary,
+    // wild-explorer) was already true from the 15 seeded sightings, so a
+    // normal capture must not re-flag any of them.
+    lifeDexStore.addSighting(makeSighting({ id: 'ach-baseline-1', createdAt: LONG_AGO_ISO }));
+    expect(lifeDexStore.getSnapshot().pendingAchievements).toEqual([]);
+  });
+
+  it('flags a single achievement that newly crosses its threshold (streak-7) and credits ACHIEVEMENT_XP', () => {
+    const baselineXp = lifeDexStore.getSnapshot().profile.xp;
+    // lastStreak defaults to 0 (fresh reset, no hydrate) — passing 7 here
+    // crosses the streak-7 threshold on this exact call.
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-streak-1', xp: 0, createdAt: LONG_AGO_ISO }),
+      undefined,
+      7,
+    );
+    expect(lifeDexStore.getSnapshot().pendingAchievements).toEqual(['streak-7']);
+    expect(lifeDexStore.getSnapshot().profile.xp).toBe(baselineXp + ACHIEVEMENT_XP);
+  });
+
+  it('does NOT re-flag streak-7 on a later capture at the same streak value', () => {
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-streak-2a', xp: 0, createdAt: LONG_AGO_ISO }),
+      undefined,
+      7,
+    );
+    lifeDexStore.consumeAchievements();
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-streak-2b', xp: 0, createdAt: LONG_AGO_ISO }),
+      undefined,
+      7,
+    );
+    expect(lifeDexStore.consumeAchievements()).toEqual([]);
+  });
+
+  it('flags MULTIPLE achievements unlocked by the same capture and credits ACHIEVEMENT_XP for each', () => {
+    const baselineXp = lifeDexStore.getSnapshot().profile.xp;
+    // 15 seeded + 9 padding captures = 24 total / 24 unique species (each
+    // distinct via makeSighting's auto-incrementing commonName) — both
+    // finds-25 and species-25 stay locked (24 < 25 target).
+    for (let i = 0; i < 9; i++) {
+      lifeDexStore.addSighting(
+        makeSighting({ id: `ach-multi-pad-${i}`, xp: 0, createdAt: LONG_AGO_ISO }),
+      );
+    }
+    expect(lifeDexStore.getSnapshot().pendingAchievements).toEqual([]);
+
+    // The 10th distinct capture pushes BOTH totals to 25 in the same call.
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-multi-trigger', xp: 0, createdAt: LONG_AGO_ISO }),
+    );
+
+    const pending = lifeDexStore.getSnapshot().pendingAchievements;
+    expect(pending).toEqual(expect.arrayContaining(['finds-25', 'species-25']));
+    expect(pending).toHaveLength(2);
+    expect(lifeDexStore.getSnapshot().profile.xp).toBe(baselineXp + ACHIEVEMENT_XP * 2);
+  });
+
+  it('consumeAchievements reads-and-clears exactly once', () => {
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-consume-1', xp: 0, createdAt: LONG_AGO_ISO }),
+      undefined,
+      7,
+    );
+    expect(lifeDexStore.getSnapshot().pendingAchievements.length).toBeGreaterThan(0);
+
+    const first = lifeDexStore.consumeAchievements();
+    expect(first).toEqual(['streak-7']);
+    expect(lifeDexStore.getSnapshot().pendingAchievements).toEqual([]);
+
+    const second = lifeDexStore.consumeAchievements();
+    expect(second).toEqual([]);
+  });
+
+  it('consumeAchievements returns [] when nothing is pending', () => {
+    expect(lifeDexStore.consumeAchievements()).toEqual([]);
+  });
+
+  it('reset() clears any pending achievements', () => {
+    lifeDexStore.addSighting(
+      makeSighting({ id: 'ach-reset-1', xp: 0, createdAt: LONG_AGO_ISO }),
+      undefined,
+      7,
+    );
+    expect(lifeDexStore.getSnapshot().pendingAchievements.length).toBeGreaterThan(0);
+    lifeDexStore.reset();
+    expect(lifeDexStore.getSnapshot().pendingAchievements).toEqual([]);
+  });
+
+  it('idempotent addSighting (duplicate id) does not re-flag achievements', () => {
+    const s = makeSighting({ id: 'ach-idem-1', xp: 0, createdAt: LONG_AGO_ISO });
+    lifeDexStore.addSighting(s, undefined, 7);
+    lifeDexStore.consumeAchievements();
+    lifeDexStore.addSighting(s, undefined, 7); // same id again — no-op per idempotency rules
+    expect(lifeDexStore.consumeAchievements()).toEqual([]);
   });
 });
 
