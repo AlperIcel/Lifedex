@@ -11,6 +11,15 @@ const appJson = require('./app.json');
 
 module.exports = () => ({
   ...appJson.expo,
+  android: {
+    ...appJson.expo.android,
+    // Native Google Maps (react-native-maps) needs an API key on Android. It is
+    // only used when MAPS_PROVIDER != mock (Phase 3). Kept out of app.json as a
+    // secret and supplied via env for real builds — harmless/omitted when unset.
+    ...(process.env.GOOGLE_MAPS_API_KEY !== undefined && process.env.GOOGLE_MAPS_API_KEY.length > 0
+      ? { config: { googleMaps: { apiKey: process.env.GOOGLE_MAPS_API_KEY } } }
+      : {}),
+  },
   extra: {
     ...appJson.expo.extra,
     SUPABASE_URL: process.env.SUPABASE_URL ?? '',

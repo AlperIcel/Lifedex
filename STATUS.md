@@ -60,6 +60,15 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Release plan decided (dual-model review, 2026-07-28): v1 = SINGLE-PLAYER.**
+  Community/Ranks/accounts are deliberately cut to v1.1 — this removes the three
+  biggest liabilities at once (UGC moderation, XP cheating, location-based
+  poaching) and makes the privacy story airtight. See "Release plan" below.
+- **Dev Build prepped** (the gate that unblocks real map, immersive nav bar,
+  accounts, push, store distribution): `eas.json` (development/preview/production
+  profiles), Google-Maps-key plumbing in `app.config.js` + `.env.example`, and a
+  step-by-step owner guide `docs/DEV_BUILD.md`. Awaiting owner accounts (Expo,
+  Google Play $25, Maps key) to run the first `eas build`.
 - **Multi-language (EN/DE)** — lightweight i18n engine (`src/i18n/`): reactive,
   persisted language store, co-located `useT(catalog)` per screen + shared
   `useCommon()` enum labels (rarity/category/captive). Auto-default from the
@@ -129,33 +138,38 @@ real accounts, scale moderation) remain.
 - Two correctness-review passes fixed real bugs (Home card-tap id, leaderboard
   identity, protected-coord leak, crop overflow, etc.).
 
-## Next up (prioritized — from the dual review)
-1. 🔑 **Activate the recognition engine (owner):** set `AI_PROVIDER=inaturalist` +
-   `INATURALIST_API_TOKEN` (token from inaturalist.org/users/api_token), optional
-   `PLANTNET_API_KEY`. Then live-verify real IDs on real photos and tune the
-   confidence thresholds against actual API output. Optional: deploy off-device
-   proxies (`INAT_PROXY_URL` / `PLANTNET_PROXY_URL`) like the Vision proxy. Also
-   worth verifying at integration: iNat may want the api_token WITHOUT a `Bearer`
-   prefix (see comment in `inatClient.ts`).
-2. **Server-side score validation** (Supabase Edge Function re-computes XP,
-   rejects spoofed inserts) — client-minted XP is currently trust-based.
-3. **Dedup retention tuning** — re-catch should grant small XP instead of 0
-   (product decision on amounts/gating).
-4. **Real accounts** (Sign in with Apple/Google over the anonymous session).
-5. **Community moderation ops** (report button + `moderation_status` + review).
-6. **EAS build + store prep** (eas.json, icons/splash, privacy policy, GDPR
-   server-side deletion of Storage files), retention (push notifications).
+## Release plan (v1 = SINGLE-PLAYER; decided 2026-07-28, dual-model review)
+Recognition is real + live-verified, so the hard part is done. **v1 is a polished
+single-player nature-hunt; community/ranks/accounts are cut to v1.1** — this
+removes the three biggest liabilities (UGC moderation, XP cheating, location-based
+poaching) and makes the privacy story airtight ("nothing is published").
 
-### Deferred to a development build (can't work in Expo Go) — user tested 2026-07-28
-- **Real zoomable map** matching the true environment (react-native-maps +
-  Google Maps key). Today the Map is the stylised `MockMapView` (abstract
-  circles = fuzzed sighting markers), not a real basemap; not interactive/zoomable.
-- **Hide the Android system navigation bar** (immersive). `expo-navigation-bar`
-  is wired in `App.tsx` but is a no-op under Expo Go + SDK 54 edge-to-edge; it
-  should take effect in a dev/prod build.
-- **km/mi unit setting has no live consumer yet** — wire `formatDistance` from
-  `store/settings.ts` into `CardDetailScreen` location/precision labels
-  (follow-up task filed).
+Ordered path to an Android launch:
+1. ▶ **Development Build — THE gate (current step; needs owner).** `eas.json` +
+   `docs/DEV_BUILD.md` ready. Owner creates Expo + Google Play ($25) accounts,
+   runs `eas build --profile development --platform android`. Unblocks everything
+   below (real map, immersive nav bar, accounts, push, store, real-device QA).
+2. **Solo-cut (code):** Leaderboard tab → local **Stats/Achievements** screen;
+   community push behind an off flag for v1; drop the simulated players.
+3. **Real zoomable map** (react-native-maps + Google Maps key) with the same
+   privacy markers (protected = circle only). Needs the dev build.
+4. **Key hardening (MANDATORY before any public build):** iNat/PlantNet server
+   proxies so the personal 24h token never ships in the client; per-user daily
+   cap at the proxy (= cost control + anti-abuse + monetization lever).
+5. **Monetization:** free + generous daily cap + one-time **"Pro"** unlock
+   (higher/unlimited cap + cosmetics). Subscription deferred to v1.1.
+6. **Store prep:** icons/splash final, hosted privacy policy, Play Data Safety,
+   screenshots EN/DE, GDPR local wipe, Sentry. **Start Play Closed Testing EARLY
+   — 12 testers × 14 days is the longest pole to Production.**
+
+### Cut to v1.1+ (do NOT ship community without both server-XP-validation AND a moderation queue)
+Community feed · shared map · real accounts (Apple/Google) · server-side score
+validation · report button + `moderation_status` review · push · AI card restyle.
+
+### Smaller follow-ups
+- **km/mi:** wire `formatDistance` (`store/settings.ts`) into `CardDetailScreen`
+  location/precision labels.
+- iNat `Bearer` prefix: verify at integration (comment in `inatClient.ts`).
 
 ## Owner setup (unlocks features; all guarded — app works without them)
 See **`docs/OWNER_SETUP.md`**. Summary: run `supabase/storage.sql` (card images
