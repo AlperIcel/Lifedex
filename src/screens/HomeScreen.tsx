@@ -34,6 +34,14 @@ import { LevelRing } from '@/components/LevelRing';
 import { RarityBadge } from '@/components/RarityBadge';
 import { SectionHeader } from '@/components/SectionHeader';
 import { XPRing } from '@/components/XPRing';
+import {
+  dailyQuestsFor,
+  dayKeyOf,
+  speciesOfTheDay,
+  DAILY_REWARD_XP,
+  type DailyQuest,
+  type DailyQuestId,
+} from '@/domain/dailyQuests';
 import type { Rarity, Sighting } from '@/domain/types';
 import { useT } from '@/i18n';
 import {
@@ -49,6 +57,7 @@ import { env } from '@/config/env';
 import { useSettings, formatDistance } from '@/store/settings';
 import {
   colors,
+  elevation,
   gutter,
   radius,
   rarityColors,
@@ -120,6 +129,25 @@ const C = {
     hrsAgo: '{hrs}h ago',
     daysAgo: '{days}d ago',
     streakA11y: '{count} day streak',
+
+    // Daily loop ("Today" card) — quests, species of the day, claimable reward.
+    dailyQuestsTitle: 'Daily Quests',
+    questProgress: '{current}/{target}',
+    questDoneA11y: 'done',
+    questInProgressA11y: 'in progress',
+    questSpecies3: 'Catch 3 species today',
+    questCategoryAnimal: 'Catch an animal today',
+    questCategoryPlant: 'Catch a plant today',
+    questCategoryTree: 'Catch a tree today',
+    questCategoryMushroom: 'Catch a mushroom today',
+    questRareOrNew: 'Catch something rare or new',
+    questVolume5: 'Log 5 sightings today',
+    questWild1: 'Catch something wild',
+    speciesOfDay: 'Species of the Day',
+    speciesOfDayA11y: 'Species of the Day: {name}. Tap to go find it.',
+    claimReward: 'Claim +{xp} XP',
+    rewardClaimed: 'Reward claimed',
+    completeQuestsFirst: '{done}/{total} quests done',
   },
   de: {
     subtitle: 'Erfassen · Sammeln · Schützen',
@@ -143,10 +171,57 @@ const C = {
     hrsAgo: 'vor {hrs}h',
     daysAgo: 'vor {days}d',
     streakA11y: '{count} Tage Serie',
+
+    // Daily loop ("Heute"-Karte) — Tagesquests, Art des Tages, abholbare Belohnung.
+    dailyQuestsTitle: 'Tagesaufgaben',
+    questProgress: '{current}/{target}',
+    questDoneA11y: 'erledigt',
+    questInProgressA11y: 'in Arbeit',
+    questSpecies3: 'Fang heute 3 Arten',
+    questCategoryAnimal: 'Fang heute ein Tier',
+    questCategoryPlant: 'Fang heute eine Pflanze',
+    questCategoryTree: 'Fang heute einen Baum',
+    questCategoryMushroom: 'Fang heute einen Pilz',
+    questRareOrNew: 'Fang etwas Seltenes oder Neues',
+    questVolume5: 'Erfasse heute 5 Sichtungen',
+    questWild1: 'Fang etwas Wildes',
+    speciesOfDay: 'Art des Tages',
+    speciesOfDayA11y: 'Art des Tages: {name}. Tippen, um sie zu suchen.',
+    claimReward: '+{xp} XP abholen',
+    rewardClaimed: 'Belohnung abgeholt',
+    completeQuestsFirst: '{done}/{total} Quests geschafft',
   },
 } as const;
 
 type TFunc = (key: keyof typeof C.en, vars?: Record<string, string | number>) => string;
+
+/* ------------------------------------------------------------------ */
+/* Daily quest display maps — the domain layer (dailyQuests.ts) stays  */
+/* string-free; this screen owns the icon + title lookup by stable id, */
+/* same convention as achievements.ts / StatsScreen's ACHIEVEMENT_COPY_KEYS. */
+/* ------------------------------------------------------------------ */
+
+const QUEST_ICON: Record<DailyQuestId, keyof typeof Ionicons.glyphMap> = {
+  'species-3': 'compass-outline',
+  'category-animal': 'paw-outline',
+  'category-plant': 'flower-outline',
+  'category-tree': 'leaf-outline',
+  'category-mushroom': 'nutrition-outline',
+  'rare-or-new': 'sparkles-outline',
+  'volume-5': 'albums-outline',
+  'wild-1': 'trail-sign-outline',
+};
+
+const QUEST_TITLE_KEY: Record<DailyQuestId, keyof typeof C.en> = {
+  'species-3': 'questSpecies3',
+  'category-animal': 'questCategoryAnimal',
+  'category-plant': 'questCategoryPlant',
+  'category-tree': 'questCategoryTree',
+  'category-mushroom': 'questCategoryMushroom',
+  'rare-or-new': 'questRareOrNew',
+  'volume-5': 'questVolume5',
+  'wild-1': 'questWild1',
+};
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -276,6 +351,52 @@ function SimulatedChip() {
   );
 }
 
+/** One row in the "Today" card's quest list — icon, title, progress bar. */
+function DailyQuestRow({ quest }: { quest: DailyQuest }) {
+  const t = useT(C);
+  const title = t(QUEST_TITLE_KEY[quest.id]);
+  const icon = QUEST_ICON[quest.id];
+  // Small visible sliver once progress starts (matches StatsScreen's achievement bars).
+  const pct =
+    quest.target > 0
+      ? Math.max(quest.current > 0 ? 6 : 0, Math.min(100, (quest.current / quest.target) * 100))
+      : 0;
+
+  return (
+    <View
+      style={styles.questRow}
+      accessible
+      accessibilityLabel={`${title}. ${t('questProgress', {
+        current: quest.current,
+        target: quest.target,
+      })}. ${quest.done ? t('questDoneA11y') : t('questInProgressA11y')}`}
+    >
+      <View style={[styles.questIconBubble, quest.done && styles.questIconBubbleDone]}>
+        <Ionicons name={icon} size={18} color={quest.done ? colors.accent : colors.textSecondary} />
+      </View>
+      <View style={styles.questBody}>
+        <View style={styles.questTitleRow}>
+          <Text style={[styles.questTitle, quest.done && styles.questTitleDone]} numberOfLines={1}>
+            {title}
+          </Text>
+          {quest.done ? (
+            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+          ) : (
+            <Text style={styles.questProgressText}>
+              {t('questProgress', { current: quest.current, target: quest.target })}
+            </Text>
+          )}
+        </View>
+        <View style={styles.questTrack}>
+          <View
+            style={[styles.questFill, { width: `${pct}%` }, quest.done && styles.questFillDone]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* HomeScreen                                                           */
 /* ------------------------------------------------------------------ */
@@ -287,12 +408,44 @@ export function HomeScreen(): React.JSX.Element {
   const t = useT(C);
   const state = useLifeDexStore();
 
-  const { profile } = state;
+  const { profile, claimDailyReward } = state;
   const recentSightings = useMemo(() => selectRecentDiscoveries(state), [state]);
   const todayCount = useMemo(() => selectTodayCount(state), [state]);
   const totalSpecies = useMemo(() => selectTotalSpecies(state), [state]);
 
   const lb = useMemo(() => levelBounds(profile.xp), [profile.xp]);
+
+  // ── Daily loop: quests, Species of the Day, claimable reward ─────────
+  // dayKey is real wall-clock (Date.now(), like selectTodayCount) — allowed
+  // here per project convention; only the domain layer must stay pure.
+  const todayKey = dayKeyOf(new Date().toISOString());
+  const quests = useMemo(
+    () => dailyQuestsFor(todayKey, state.sightings),
+    [todayKey, state.sightings],
+  );
+  const speciesToday = useMemo(() => speciesOfTheDay(todayKey), [todayKey]);
+  const doneCount = quests.filter((q) => q.done).length;
+  const allQuestsDone = quests.length > 0 && doneCount === quests.length;
+  const alreadyClaimedToday = state.dailyRewardClaimedDayKey === todayKey;
+  // Design decision: the claim button is enabled ONLY when every quest is
+  // done AND today hasn't been claimed yet — it becomes the "collect" step of
+  // a complete-then-claim loop rather than a passive XP trickle. Once claimed
+  // it flips to a disabled "claimed" state for the rest of the day; while any
+  // quest is open it shows a live done-count so the lock reads as progress,
+  // not a dead end.
+  const canClaimToday = allQuestsDone && !alreadyClaimedToday;
+
+  const claimLabel = alreadyClaimedToday
+    ? t('rewardClaimed')
+    : allQuestsDone
+      ? t('claimReward', { xp: DAILY_REWARD_XP })
+      : t('completeQuestsFirst', { done: doneCount, total: quests.length });
+
+  const claimIcon: keyof typeof Ionicons.glyphMap = alreadyClaimedToday
+    ? 'checkmark-circle'
+    : allQuestsDone
+      ? 'gift'
+      : 'lock-closed-outline';
 
   // Daily-streak flame — read-only display; nothing here writes streak state.
   const [streak, setStreak] = useState(0);
@@ -332,6 +485,11 @@ export function HomeScreen(): React.JSX.Element {
     navigation.navigate('Settings');
   }, [navigation]);
 
+  const handleClaimPress = useCallback(() => {
+    const result = claimDailyReward(todayKey);
+    if (result.claimed) haptics.success();
+  }, [claimDailyReward, todayKey]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -367,6 +525,57 @@ export function HomeScreen(): React.JSX.Element {
               <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
             </Pressable>
           </View>
+        </View>
+
+        {/* ── Today: daily quests + Species of the Day + claim ────── */}
+        <View style={styles.todayCard}>
+          <View style={styles.todayHeaderRow}>
+            <Text style={styles.todayTitle}>{t('dailyQuestsTitle')}</Text>
+            <Text style={styles.todayBadge}>
+              {t('questProgress', { current: doneCount, target: quests.length })}
+            </Text>
+          </View>
+
+          <View style={styles.questList}>
+            {quests.map((quest) => (
+              <DailyQuestRow key={quest.id} quest={quest} />
+            ))}
+          </View>
+
+          <View style={styles.todayDivider} />
+
+          <Pressable
+            onPress={handleCapturePress}
+            style={({ pressed }) => [styles.speciesRow, pressed && styles.cardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={t('speciesOfDayA11y', { name: speciesToday.name })}
+          >
+            <View style={styles.speciesIconBubble}>
+              <Ionicons name="sparkles" size={22} color={colors.amber} />
+            </View>
+            <View style={styles.speciesBody}>
+              <Text style={styles.speciesLabel}>{t('speciesOfDay')}</Text>
+              <Text style={styles.speciesName} numberOfLines={1}>
+                {speciesToday.name}
+              </Text>
+              {speciesToday.scientificName ? (
+                <Text style={styles.speciesScientific} numberOfLines={1}>
+                  {speciesToday.scientificName}
+                </Text>
+              ) : null}
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </Pressable>
+
+          <Button
+            title={claimLabel}
+            variant={!alreadyClaimedToday && allQuestsDone ? 'primary' : 'secondary'}
+            icon={claimIcon}
+            fullWidth
+            disabled={!canClaimToday}
+            onPress={handleClaimPress}
+            style={styles.claimButton}
+          />
         </View>
 
         {/* ── Hero: Level ring + stats ───────────────────── */}
@@ -599,6 +808,134 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   ctaButton: {
+    marginTop: 0,
+  },
+
+  /* Today card (daily quests + Species of the Day + claim) */
+  todayCard: {
+    backgroundColor: colors.surface,
+    marginHorizontal: gutter,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...elevation.level1,
+  },
+  todayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  todayTitle: {
+    ...typography.headline,
+    color: colors.textPrimary,
+  },
+  todayBadge: {
+    ...typography.label,
+    color: colors.textTertiary,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    ...{ fontVariant: ['tabular-nums'] as const },
+  },
+  questList: {
+    gap: spacing.sm + 4,
+  },
+  questRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  questIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    flexShrink: 0,
+  },
+  questIconBubbleDone: {
+    backgroundColor: colors.accentSubtle,
+  },
+  questBody: {
+    flex: 1,
+    gap: 4,
+  },
+  questTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  questTitle: {
+    ...typography.callout,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  questTitleDone: {
+    color: colors.textSecondary,
+  },
+  questProgressText: {
+    ...typography.label,
+    ...{ fontVariant: ['tabular-nums'] as const },
+    color: colors.textTertiary,
+  },
+  questTrack: {
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceHigh,
+    overflow: 'hidden',
+  },
+  questFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  questFillDone: {
+    backgroundColor: colors.success,
+  },
+  todayDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.separator,
+    marginVertical: spacing.md,
+  },
+  speciesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  speciesIconBubble: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: rarityTints.legendary,
+    flexShrink: 0,
+  },
+  speciesBody: {
+    flex: 1,
+    gap: 2,
+  },
+  speciesLabel: {
+    ...typography.label,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+  },
+  speciesName: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: '600' as const,
+  },
+  speciesScientific: {
+    ...typography.footnote,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
+  claimButton: {
     marginTop: 0,
   },
 

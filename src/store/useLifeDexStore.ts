@@ -25,6 +25,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { buildCardMetadata } from '@/domain/cardMetadata';
+import { dailyQuestsFor, DAILY_REWARD_XP } from '@/domain/dailyQuests';
 import { getPublicLocation } from '@/domain/locationPrivacy';
 import { scoreSighting } from '@/domain/scoring';
 import type {
@@ -40,7 +41,9 @@ import {
   type LeaderboardEntry,
 } from '@/screens/leaderboard/mockData';
 import {
+  loadDailyRewardMeta,
   loadUserCaptures,
+  saveDailyRewardMeta,
   saveUserCaptures,
   type PersistedCapture,
 } from './persistence';
@@ -97,6 +100,24 @@ export interface LifeDexState {
    * level-ups as if they just happened).
    */
   pendingLevelUp: number | null;
+  /**
+   * dayKey ('YYYY-MM-DD') of the last claimed daily-quest reward, or null if
+   * never claimed. Unlike the ad-hoc streak load (HomeScreen loads
+   * `loadStreakMeta()` itself, outside the store), this lives IN the reactive
+   * state on purpose — see `claimDailyReward()` — so every screen using
+   * `useLifeDexStore()` re-renders the instant it changes. Hydrated from
+   * AsyncStorage in `hydrate()`; defaults to null until then (matches the
+   * seed-then-merge pattern already used for persisted captures).
+   */
+  dailyRewardClaimedDayKey: string | null;
+}
+
+/** Result of a `claimDailyReward` call — see that method for the gating rules. */
+export interface DailyRewardClaimResult {
+  claimed: boolean;
+  /** XP actually credited (0 when not claimed). */
+  xp: number;
+  reason?: 'already-claimed' | 'quests-incomplete';
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,6 +291,7 @@ function createInitialState(): LifeDexState {
     loading: false,
     error: null,
     pendingLevelUp: null,
+    dailyRewardClaimedDayKey: null,
   };
 }
 
@@ -379,23 +401,68 @@ class LifeDexStore {
   }
 
   /**
-   * Load persisted user captures and merge them on top of the seed baseline.
-   * Call once at app startup. Idempotent: captures already present are skipped.
+   * Claim the daily-quest reward for `dayKey` (a flat `DAILY_REWARD_XP` bonus
+   * — see src/domain/dailyQuests.ts). Gated in the STORE itself, not just the
+   * UI, so the invariant holds even if a caller bypasses a disabled button:
+   *   - at most once per dayKey (`dailyRewardClaimedDayKey` tracks the last
+   *     claimed day), and
+   *   - only once all of that day's quests (`dailyQuestsFor`) are done.
+   * Uses the store's OWN xp/level math (xpToLevel) — deliberately NOT routed
+   * through scoreSighting/scoring.ts, since this is a login/engagement bonus,
+   * not a capture score.
+   */
+  claimDailyReward(dayKey: string): DailyRewardClaimResult {
+    if (this.state.dailyRewardClaimedDayKey === dayKey) {
+      return { claimed: false, xp: 0, reason: 'already-claimed' };
+    }
+
+    const quests = dailyQuestsFor(dayKey, this.state.sightings);
+    const allDone = quests.length > 0 && quests.every((q) => q.done);
+    if (!allDone) {
+      return { claimed: false, xp: 0, reason: 'quests-incomplete' };
+    }
+
+    const newXp = this.state.profile.xp + DAILY_REWARD_XP;
+    this.setState({
+      ...this.state,
+      profile: { ...this.state.profile, xp: newXp, level: xpToLevel(newXp) },
+      dailyRewardClaimedDayKey: dayKey,
+    });
+    void saveDailyRewardMeta({ lastClaimedDayKey: dayKey });
+
+    return { claimed: true, xp: DAILY_REWARD_XP };
+  }
+
+  /**
+   * Load persisted user captures + daily-reward claim state and merge them on
+   * top of the seed baseline. Call once at app startup. Idempotent: captures
+   * already present are skipped, and re-hydrating with the same claimed
+   * dayKey is a no-op.
    */
   async hydrate(): Promise<void> {
-    const loaded = await loadUserCaptures();
-    if (loaded.length === 0) return;
-
-    this.userCaptures = loaded;
+    const [loaded, dailyReward] = await Promise.all([
+      loadUserCaptures(),
+      loadDailyRewardMeta(),
+    ]);
     let changed = false;
-    // Stored newest-first; apply oldest-first so prepending restores the order.
-    for (let i = loaded.length - 1; i >= 0; i--) {
-      const cap = loaded[i];
-      if (cap !== undefined && !this.sightingIndex.has(cap.sighting.id)) {
-        this.applyCapture(cap.sighting, cap.card);
-        changed = true;
+
+    if (loaded.length > 0) {
+      this.userCaptures = loaded;
+      // Stored newest-first; apply oldest-first so prepending restores the order.
+      for (let i = loaded.length - 1; i >= 0; i--) {
+        const cap = loaded[i];
+        if (cap !== undefined && !this.sightingIndex.has(cap.sighting.id)) {
+          this.applyCapture(cap.sighting, cap.card);
+          changed = true;
+        }
       }
     }
+
+    if (dailyReward.lastClaimedDayKey !== this.state.dailyRewardClaimedDayKey) {
+      this.state = { ...this.state, dailyRewardClaimedDayKey: dailyReward.lastClaimedDayKey };
+      changed = true;
+    }
+
     if (changed) this.emit();
   }
 
@@ -480,6 +547,11 @@ export function selectTotalSpecies(state: LifeDexState): number {
   return new Set(state.sightings.map((s) => s.commonName)).size;
 }
 
+/** True when `dayKey`'s daily-quest reward has already been claimed. */
+export function selectDailyRewardClaimed(state: LifeDexState, dayKey: string): boolean {
+  return state.dailyRewardClaimedDayKey === dayKey;
+}
+
 /* ------------------------------------------------------------------ */
 /* React hook                                                          */
 /* ------------------------------------------------------------------ */
@@ -497,6 +569,7 @@ export interface UseLifeDexStore extends LifeDexState {
   setError: (e: string | null) => void;
   reset: () => void;
   consumeLevelUp: () => number | null;
+  claimDailyReward: (dayKey: string) => DailyRewardClaimResult;
 }
 
 /**
@@ -524,5 +597,6 @@ export function useLifeDexStore(): UseLifeDexStore {
     setError: (e) => lifeDexStore.setError(e),
     reset: () => lifeDexStore.reset(),
     consumeLevelUp: () => lifeDexStore.consumeLevelUp(),
+    claimDailyReward: (dayKey) => lifeDexStore.claimDailyReward(dayKey),
   };
 }

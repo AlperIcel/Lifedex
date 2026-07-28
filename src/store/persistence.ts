@@ -68,6 +68,7 @@ export async function clearUserCaptures(): Promise<void> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
     await AsyncStorage.removeItem(STREAK_KEY);
+    await AsyncStorage.removeItem(DAILY_REWARD_KEY);
   } catch {
     // ignore
   }
@@ -106,6 +107,45 @@ export async function loadStreakMeta(): Promise<StreakMeta> {
 export async function saveStreakMeta(meta: StreakMeta): Promise<void> {
   try {
     await AsyncStorage.setItem(STREAK_KEY, JSON.stringify(meta));
+  } catch {
+    // best-effort
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Daily reward (daily-quest claim) meta                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tracks which calendar day's daily-quest reward has been claimed, so
+ * `claimDailyReward` (useLifeDexStore.ts) can allow at most one claim per
+ * dayKey. Minimal by design: the quests themselves are recomputed live from
+ * `sightings` (src/domain/dailyQuests.ts) — only the claim itself needs to
+ * survive a restart.
+ */
+export interface DailyRewardMeta {
+  /** dayKey ('YYYY-MM-DD') of the last claimed daily reward, or null if never claimed. */
+  lastClaimedDayKey: string | null;
+}
+
+const DAILY_REWARD_KEY = 'lifedex:dailyReward:v1';
+
+export async function loadDailyRewardMeta(): Promise<DailyRewardMeta> {
+  try {
+    const raw = await AsyncStorage.getItem(DAILY_REWARD_KEY);
+    if (raw === null) return { lastClaimedDayKey: null };
+    const p = JSON.parse(raw) as Partial<DailyRewardMeta>;
+    return {
+      lastClaimedDayKey: typeof p.lastClaimedDayKey === 'string' ? p.lastClaimedDayKey : null,
+    };
+  } catch {
+    return { lastClaimedDayKey: null };
+  }
+}
+
+export async function saveDailyRewardMeta(meta: DailyRewardMeta): Promise<void> {
+  try {
+    await AsyncStorage.setItem(DAILY_REWARD_KEY, JSON.stringify(meta));
   } catch {
     // best-effort
   }
