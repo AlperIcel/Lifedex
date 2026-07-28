@@ -9,7 +9,8 @@
  *   │   ├── Map
  *   │   ├── Capture         (centre FAB-style tab, no header)
  *   │   ├── Collection
- *   │   └── Leaderboard
+ *   │   └── Stats           (local Stats & Achievements — v1 solo-cut;
+ *   │                        replaces Leaderboard, see STATUS.md)
  *   ├── Result              (modal presentation over tabs)
  *   └── CardDetail          (modal presentation over tabs)
  *
@@ -31,6 +32,7 @@ import { HomeScreen } from '@/screens/HomeScreen';
 import MapScreenDefault from '@/screens/MapScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { CollectionScreen } from '@/screens/CollectionScreen';
+import { StatsScreen } from '@/screens/StatsScreen';
 // CardDetailScreen is a named export
 import { CardDetailScreen } from '@/screens/CardDetailScreen';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
@@ -41,15 +43,14 @@ const MapScreen = MapScreenDefault;
 /* ------------------------------------------------------------------
    Lazy imports for screens that use expo-camera / heavy deps — keeps
    the initial bundle lean on first-paint.
-   CaptureScreen and LeaderboardScreen are default exports.
-   ResultScreen is a default export.
+   CaptureScreen is a default export. ResultScreen is a default export.
+   NOTE: LeaderboardScreen is intentionally NOT imported here anymore — the
+   Leaderboard tab is replaced by StatsScreen for v1 (solo-cut, see
+   STATUS.md "Release plan"). The screen file itself is kept, untouched,
+   for v1.1's community re-enable.
 ------------------------------------------------------------------ */
 const CaptureScreen = React.lazy(
   () => import('@/screens/CaptureScreen'),
-);
-
-const LeaderboardScreen = React.lazy(
-  () => import('@/screens/LeaderboardScreen'),
 );
 
 const ResultScreen = React.lazy(
@@ -60,7 +61,7 @@ const ResultScreen = React.lazy(
 /* Icon sets — Ionicons (no emoji in chrome)                            */
 /* ------------------------------------------------------------------ */
 
-type TabIconName = 'Home' | 'Map' | 'Capture' | 'Collection' | 'Leaderboard';
+type TabIconName = 'Home' | 'Map' | 'Capture' | 'Collection' | 'Stats';
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
 const TAB_ICONS: Record<TabIconName, { active: IoniconName; inactive: IoniconName }> = {
@@ -68,7 +69,7 @@ const TAB_ICONS: Record<TabIconName, { active: IoniconName; inactive: IoniconNam
   Map: { active: 'map', inactive: 'map-outline' },
   Capture: { active: 'camera', inactive: 'camera' },
   Collection: { active: 'albums', inactive: 'albums-outline' },
-  Leaderboard: { active: 'podium', inactive: 'podium-outline' },
+  Stats: { active: 'stats-chart', inactive: 'stats-chart-outline' },
 };
 
 /** Tab labels — English exact (kept for visual parity); German added
@@ -80,14 +81,14 @@ const TAB_LABELS = {
     Map: 'Map',
     Capture: 'Capture',
     Collection: 'Collection',
-    Leaderboard: 'Ranks',
+    Stats: 'Stats',
   },
   de: {
     Home: 'Start',
     Map: 'Karte',
     Capture: 'Fangen',
     Collection: 'Sammlung',
-    Leaderboard: 'Ränge',
+    Stats: 'Statistiken',
   },
 } as const;
 
@@ -98,14 +99,14 @@ const TAB_A11Y = {
     map: 'Sightings map',
     capture: 'Capture a species',
     collection: 'My collection',
-    leaderboard: 'Leaderboard',
+    stats: 'Stats and achievements',
   },
   de: {
     home: 'Start-Feed',
     map: 'Sichtungskarte',
     capture: 'Art fangen',
     collection: 'Meine Sammlung',
-    leaderboard: 'Rangliste',
+    stats: 'Statistiken und Erfolge',
   },
 } as const;
 
@@ -247,20 +248,15 @@ function TabNavigator() {
       />
 
       <Tab.Screen
-        name="Leaderboard"
+        name="Stats"
+        component={StatsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabBarIcon name="Leaderboard" focused={focused} />
+            <TabBarIcon name="Stats" focused={focused} />
           ),
-          tabBarAccessibilityLabel: ta11y('leaderboard'),
+          tabBarAccessibilityLabel: ta11y('stats'),
         }}
-      >
-        {(props) => (
-          <React.Suspense fallback={<LoadingScreen />}>
-            <LeaderboardScreen {...(props as Parameters<typeof LeaderboardScreen>[0])} />
-          </React.Suspense>
-        )}
-      </Tab.Screen>
+      />
     </Tab.Navigator>
   );
 }

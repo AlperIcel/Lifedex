@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 385 passing
+npm test                 # jest — currently 433 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -39,12 +39,13 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 ## Current state at a glance
 | Area | State |
 |---|---|
-| Capture → dedup → card → Collection/Map/Ranks loop | ✅ works |
+| Capture → dedup → card → Collection/Map/Stats loop | ✅ works |
 | Recognition + moderation | ✅ REAL (Google Vision, live-verified) / mock fallback |
 | Rarity economy + protected-species hiding | ✅ real (species-rules catalogue wired) |
 | Card image | ✅ on-device subject crop (real) · AI restyle = premium stub |
 | Local persistence (survives restart) | ✅ AsyncStorage |
-| Community feed + leaderboard | ✅ real when Supabase configured; simulated fallback |
+| Solo-cut (v1) | ✅ done — Ranks tab replaced by local **Stats & Achievements**; simulated players gone from the tab bar; community push code-gated OFF (`src/config/features.ts`) |
+| Community feed + leaderboard | ⏸ built, OFF by default for v1 (single-player); `LeaderboardScreen`/`src/lib/leaderboard.ts` kept for v1.1, just not wired into a tab |
 | Design (all 8 screens + tab bar) | ✅ Apple-level overhaul (Ionicons, haptics, motion) |
 | Localization | ✅ EN/DE — device-default + in-app switch (Settings); `src/i18n/` |
 | Settings / privacy / export / delete | ✅ game-style sections + real haptics/units toggles (`store/settings.ts`) |
@@ -60,6 +61,21 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Solo-cut (release-plan step 2, 2026-07-28): Ranks tab → local Stats & Achievements.**
+  Leaderboard tab replaced by a fully local `StatsScreen` (profile hero with
+  LevelRing, overview tiles, category/rarity breakdown, achievements grid) — no
+  network, no simulated players. Two new pure domain modules: `src/domain/stats.ts`
+  (`computeStats`: totals + byCategory + byRarity) and `src/domain/achievements.ts`
+  (`computeAchievements`: stable ~12-entry catalogue — first-find, finds-25,
+  species-10/25/50, all-categories, first-rare/epic/legendary, streak-7, today-3,
+  wild-explorer — ids/progress/icon only, zero display strings, so the domain
+  layer stays string-free and trivially unit-tested). `LeaderboardScreen.tsx` and
+  `src/lib/leaderboard.ts` are untouched and still work, just no longer wired into
+  a tab (kept for v1.1). New `src/config/features.ts` (`communitySharing: false`)
+  gates the `pushSighting()` call in `sightingPipeline.ts` off for v1 — capturing
+  a sighting no longer touches the network even if Supabase is configured.
+  `RootTabParamList` keeps `Leaderboard` alongside the new `Stats` route for a
+  clean v1.1 re-enable. +48 tests (385 → 433).
 - **Release plan decided (dual-model review, 2026-07-28): v1 = SINGLE-PLAYER.**
   Community/Ranks/accounts are deliberately cut to v1.1 — this removes the three
   biggest liabilities at once (UGC moderation, XP cheating, location-based
@@ -149,8 +165,9 @@ Ordered path to an Android launch:
    `docs/DEV_BUILD.md` ready. Owner creates Expo + Google Play ($25) accounts,
    runs `eas build --profile development --platform android`. Unblocks everything
    below (real map, immersive nav bar, accounts, push, store, real-device QA).
-2. **Solo-cut (code):** Leaderboard tab → local **Stats/Achievements** screen;
-   community push behind an off flag for v1; drop the simulated players.
+2. ✅ **Solo-cut (code) — DONE.** Leaderboard tab → local **Stats/Achievements**
+   screen; community push behind an off flag for v1; simulated players dropped
+   from the tab bar.
 3. **Real zoomable map** (react-native-maps + Google Maps key) with the same
    privacy markers (protected = circle only). Needs the dev build.
 4. **Key hardening (MANDATORY before any public build):** iNat/PlantNet server
@@ -179,7 +196,9 @@ key + dev build.
 
 ## Architecture map (where things live)
 - Domain (pure, tested): `src/domain/` — scoring, dedup, moderation, locationPrivacy,
-  speciesRules, streak, types (Zod, single source of truth).
+  speciesRules, streak, stats, achievements, types (Zod, single source of truth).
+- Config flags: `src/config/features.ts` (`communitySharing`, off for v1) +
+  `src/config/env.ts` (provider/env validation).
 - Pipeline (one write-point): `src/services/sightingPipeline.ts`.
 - Store (one reactive singleton): `src/store/useLifeDexStore.ts` + `persistence.ts`.
 - Providers (swap real/mock): `src/providers/` — `interfaces.ts`, `mock/`, `google/`,

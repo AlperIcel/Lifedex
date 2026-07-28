@@ -30,6 +30,7 @@ import { loadStreakMeta, saveStreakMeta } from '@/store/persistence';
 import { lifeDexStore, type CollectionCard } from '@/store/useLifeDexStore';
 import { pushSighting } from '@/lib/community';
 import { newId } from '@/utils/id';
+import { features } from '@/config/features';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -202,7 +203,11 @@ export async function createSightingFromImage(
 
   // Share the public-safe version to the community feed (best-effort; no-op when
   // Supabase is disabled). Fire-and-forget so it never blocks the capture.
-  void pushSighting(sighting);
+  // Gated behind features.communitySharing: v1 ships single-player only (see
+  // STATUS.md "Release plan") — flip the flag on for v1.1's community layer.
+  if (features.communitySharing) {
+    void pushSighting(sighting);
+  }
 
   return {
     ok: true,

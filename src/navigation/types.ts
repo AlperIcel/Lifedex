@@ -10,6 +10,9 @@ export type RootTabParamList = {
   Map: undefined;
   Capture: undefined;
   Collection: undefined;
+  /** Local Stats & Achievements — replaces the Leaderboard tab in v1 (solo-cut). */
+  Stats: undefined;
+  /** Kept for v1.1 (community re-enable); no longer wired into a tab. */
   Leaderboard: undefined;
 };
 
