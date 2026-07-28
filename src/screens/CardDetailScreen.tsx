@@ -236,8 +236,8 @@ export function CardDetailScreen({ route, navigation }: Props) {
   const { units } = useSettings();
   const common = useCommon();
   // Store lookups are synchronous — no loading/error state needed.
-  // isFirstDiscovery is not persisted on Sighting (see store notes); default false.
-  const isFirstDiscovery = false;
+  // Persisted per-species first-discovery flag (set in sightingPipeline).
+  const isFirstDiscovery = sighting?.isFirstDiscovery === true;
 
   const handleBack = useCallback(() => {
     haptics.tap();

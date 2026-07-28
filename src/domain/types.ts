@@ -160,6 +160,11 @@ export const SightingSchema = z.object({
   confidence: z.number().min(0).max(1),
   rarity: RaritySchema,
   xp: z.number().int().nonnegative(),
+  /**
+   * True only for the FIRST time this species was ever caught — drives the +50%
+   * bonus and the "new species" moment. Optional so older/seeded rows validate.
+   */
+  isFirstDiscovery: z.boolean().optional(),
   captiveStatus: CaptiveStatusSchema,
   sensitivity: SensitivityLevelSchema,
   privatePhotoUri: z.string(),

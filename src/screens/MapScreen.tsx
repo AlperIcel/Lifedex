@@ -651,7 +651,10 @@ export default function MapScreen({ navigation }: Props) {
 
   const handleSightingRowPress = useCallback(
     (sighting: Sighting) => {
-      navigation.navigate('CardDetail', { cardId: sighting.id });
+      // Collection cards are keyed `card-<sightingId>` (see sightingPipeline +
+      // useLifeDexStore.getCardById) — Home/Collection pass that form; passing the
+      // raw sighting id here caused a "Card not found" screen.
+      navigation.navigate('CardDetail', { cardId: `card-${sighting.id}` });
     },
     [navigation],
   );

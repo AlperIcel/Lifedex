@@ -128,6 +128,12 @@ export async function createSightingFromImage(
     };
   }
 
+  // First discovery = no prior sighting of this species ANYWHERE (drives the
+  // +50% scoring bonus and the "new species" moment). dedup.priorCount counts
+  // priors of this species at any distance; 0 = we've never caught it before.
+  // (Previously hardcoded true, which made the bonus universal and meaningless.)
+  const isFirstDiscovery = dedup.priorCount === 0;
+
   // 2c. Daily streak — a new discovery advances the consecutive-day streak; the
   // scoring engine gives a small bonus for it.
   const nowISO = new Date().toISOString();
@@ -142,7 +148,7 @@ export async function createSightingFromImage(
     captiveStatus: recognition.captiveStatus,
     sensitivity: recognition.sensitivity,
     qualityOk: moderation.qualityOk,
-    isFirstDiscovery: true,
+    isFirstDiscovery,
     streak,
   });
 
@@ -178,6 +184,7 @@ export async function createSightingFromImage(
     confidence: recognition.confidence,
     rarity: score.rarity,
     xp: score.xp,
+    isFirstDiscovery,
     captiveStatus: recognition.captiveStatus,
     sensitivity: recognition.sensitivity,
     privatePhotoUri, // PRIVATE — never exposed publicly
