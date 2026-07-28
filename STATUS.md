@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 433 passing
+npm test                 # jest — currently 501 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -41,7 +41,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 |---|---|
 | Capture → dedup → card → Collection/Map/Stats loop | ✅ works |
 | Recognition + moderation | ✅ REAL (Google Vision, live-verified) / mock fallback |
-| Rarity economy + protected-species hiding | ✅ real (species-rules catalogue wired) |
+| Rarity economy + protected-species hiding | ✅ real AND scalable — curated catalogue → real iNat observation frequency → capped generic fallback |
 | Card image | ✅ on-device subject crop (real) · AI restyle = premium stub |
 | Local persistence (survives restart) | ✅ AsyncStorage |
 | Solo-cut (v1) | ✅ done — Ranks tab replaced by local **Stats & Achievements**; simulated players gone from the tab bar; community push code-gated OFF (`src/config/features.ts`) |
@@ -61,6 +61,37 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Scalable, context-honest rarity economy (2026-07-28, studio-review priority #1).**
+  Rarity was context-free: only the ~48 curated species in `speciesRules.ts` had a
+  real `baseRarity`; everything else — ~99 % of what iNat actually recognises —
+  fell to the generic fallback in `scoring.ts`, which **caps at `rare`**. Epic and
+  legendary were therefore unreachable for real catches and the reveal never
+  surprised. Fixed by using **real observation frequency** as the rarity signal:
+  iNaturalist publishes a GLOBAL `observations_count` per taxon on a public,
+  token-free endpoint (`GET /v1/taxa/{id}`). Many observations = everyday; few =
+  legendary. Honest, scales to every species, reuses the source already wired.
+  - New pure domain module `src/domain/observationRarity.ts` —
+    `rarityFromObservations(count)` with named, tunable thresholds:
+    **≥500 k → common · 100 k–500 k → uncommon · 20 k–100 k → rare · 2 k–20 k →
+    epic · <2 k → legendary.**
+  - New `src/lib/inatObservations.ts` — `fetchObservationsCount(taxonId)`, cached
+    (memory + AsyncStorage, `lore.ts` pattern) with a **30-day TTL** so counts
+    aren't frozen, a 6 s timeout, and best-effort semantics (never throws, never
+    blocks a catch). Transport failures are deliberately NOT cached.
+  - `RecognitionResult` gains optional `observationsCount`. The iNat mapper reads
+    an embedded `taxon.observations_count` for free and exposes `topTaxonId()`;
+    the provider fetches the count only when needed — and only when the final pick
+    is still iNat's own taxon (a PlantNet override gets no borrowed count).
+  - **Resolution priority** (in both `rarityForRecognition` and the engine, via the
+    same pure function): (a) curated catalogue, authoritative → (b) observation
+    count → (c) generic category guess. The `rare` cap now bites **only** in (c).
+    Quality gate, zoo/captive cap and duplicate penalty are untouched.
+  - Mock mode carries plausible real-world counts and gained 5 deliberately
+    **uncurated** species (Ghost Orchid → legendary, Alpine Salamander & Bleeding
+    Tooth Fungus → epic, Common Wall Lizard → rare, Wood Anemone → uncommon) so a
+    keyless run actually shows the full rarity range.
+  - Privacy: the taxa call sends **only a numeric taxon id** — no photo, no path,
+    no GPS, no user data, no auth header (regression-tested). +63 tests (438 → 501).
 - **Build-queue batch (2026-07-28, while the first EAS build queued):** pushed all
   commits to GitHub (`AlperIcel/Lifedex`); wrote the **recognition proxies**
   (`supabase/functions/inat-proxy` + `plantnet-proxy`, Deno — token-off-device,
@@ -198,6 +229,11 @@ validation · report button + `moderation_status` review · push · AI card rest
   (precision/radius), Home ("X away"), and Result (fuzzed-location note) — the
   units toggle in Settings updates them live. (Map circle stays geometric.)
 - iNat `Bearer` prefix: verify at integration (comment in `inatClient.ts`).
+- **Tune the rarity curve after real play** — thresholds live in one place
+  (`OBSERVATION_RARITY_THRESHOLDS` in `src/domain/observationRarity.ts`). Only
+  live-verifiable items: whether `score_image` already embeds
+  `taxon.observations_count` (if it does, the extra request never fires), and the
+  real-world tier distribution of a typical walk.
 
 ## Owner setup (unlocks features; all guarded — app works without them)
 See **`docs/OWNER_SETUP.md`**. Summary: run `supabase/storage.sql` (card images
@@ -207,14 +243,16 @@ key + dev build.
 
 ## Architecture map (where things live)
 - Domain (pure, tested): `src/domain/` — scoring, dedup, moderation, locationPrivacy,
-  speciesRules, streak, stats, achievements, types (Zod, single source of truth).
+  speciesRules, observationRarity, streak, stats, achievements, types (Zod, single
+  source of truth).
 - Config flags: `src/config/features.ts` (`communitySharing`, off for v1) +
   `src/config/env.ts` (provider/env validation).
 - Pipeline (one write-point): `src/services/sightingPipeline.ts`.
 - Store (one reactive singleton): `src/store/useLifeDexStore.ts` + `persistence.ts`.
 - Providers (swap real/mock): `src/providers/` — `interfaces.ts`, `mock/`, `google/`,
   `inaturalist/` (CV, primary), `plantnet/` (flora refiner). Factory: `index.ts`.
-- Backend glue: `src/lib/` — supabase, community, cardImageUpload, leaderboard, onboarding.
+- Backend glue: `src/lib/` — supabase, community, cardImageUpload, leaderboard,
+  onboarding, lore (Wikipedia), inatObservations (rarity signal).
 - UI: `src/screens/`, shared `src/components/`, `src/theme/theme.ts`, `src/navigation/`.
 - Backend SQL/functions/docs: `supabase/`, `docs/`.
 

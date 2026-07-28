@@ -88,13 +88,22 @@ policies.google.com, respectively).
 to an offline, simulated identification so the app still works — no photo
 leaves the device in that case.**
 
-### 5. Species facts (Wikipedia)
+### 5. Species facts (Wikipedia) and rarity (iNaturalist)
 
 The background information shown about a species (its "About" section) is
 fetched from Wikipedia's public API. Only the species' common or scientific
 name is sent — for example "Boston fern" — never your photo, your location, or
 anything else about you. This is cached on your device so the same species
 isn't looked up twice.
+
+How rare a find is scored partly from how often that species has been recorded
+worldwide. LifeDex reads that number from iNaturalist's public catalogue. The
+request contains **one number: the species' catalogue ID** (for example
+`taxa/48662`) — no photo, no location, no device or user identifier, and no
+login. It says "how common is species 48662," and nothing about who is asking.
+It is cached on your device, is refreshed at most about once a month, and is
+entirely optional: if it fails or you are offline, the app scores the find with
+a simpler estimate instead. It never delays or blocks a capture.
 
 ### 6. Location
 
@@ -285,7 +294,7 @@ unter policies.google.com).
 auf eine simulierte Offline-Erkennung aus, damit die App trotzdem
 funktioniert — in diesem Fall verlässt kein Foto das Gerät.**
 
-### 5. Artenwissen (Wikipedia)
+### 5. Artenwissen (Wikipedia) und Seltenheit (iNaturalist)
 
 Die Hintergrundinformationen zu einer Art (der „Über"-Abschnitt) werden über
 die öffentliche API von Wikipedia abgerufen. Gesendet wird ausschließlich der
@@ -293,6 +302,17 @@ deutsche/wissenschaftliche oder gebräuchliche Artname — zum Beispiel „Bosto
 Schwertfarn" — nie dein Foto, dein Standort oder sonst etwas über dich. Das
 Ergebnis wird auf deinem Gerät zwischengespeichert, damit dieselbe Art nicht
 zweimal abgefragt wird.
+
+Wie selten ein Fund ist, ergibt sich unter anderem daraus, wie oft diese Art
+weltweit dokumentiert wurde. LifeDex liest diese Zahl aus dem öffentlichen
+Artenkatalog von iNaturalist. Die Anfrage enthält **eine einzige Zahl: die
+Katalog-ID der Art** (zum Beispiel `taxa/48662`) — kein Foto, keinen Standort,
+keine Geräte- oder Nutzerkennung und keinen Login. Sie fragt „wie häufig ist
+Art 48662" und sagt nichts darüber aus, wer fragt. Sie wird auf deinem Gerät
+zwischengespeichert, höchstens etwa monatlich aufgefrischt und ist vollständig
+optional: schlägt sie fehl oder bist du offline, bewertet die App den Fund mit
+einer einfacheren Schätzung. Ein Fang wird dadurch nie verzögert oder
+verhindert.
 
 ### 6. Standort
 

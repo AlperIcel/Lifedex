@@ -16,7 +16,13 @@
  *
  * This is a curated starter catalogue; production should back it with a proper
  * dataset (GBIF / regional red lists) synced into supabase `species_rules`.
+ *
+ * SCALE: the catalogue covers ~48 species; the recogniser knows hundreds of
+ * thousands. Everything it does NOT cover now falls through to real observation
+ * frequency (`observationRarity.ts`) rather than to a rare-capped guess — see
+ * `rarityForRecognition` for the full priority chain.
  */
+import { rarityFromObservationCount } from './observationRarity';
 import type { Category, Rarity, RecognitionResult, SensitivityLevel } from './types';
 
 export interface SpeciesRuleEntry {
@@ -111,9 +117,28 @@ export function resolveSpeciesRule(
   return byCommon.get(norm(commonName));
 }
 
-/** Species baseRarity for the scoring resolver (undefined → engine falls back). */
+/**
+ * Resolve the species-level rarity for a recognition, in priority order:
+ *
+ *   (a) the curated catalogue above — AUTHORITATIVE. A hand-checked entry always
+ *       wins; it encodes protection status and local judgement that a raw
+ *       observation count cannot.
+ *   (b) the taxon's GLOBAL iNaturalist observation count, mapped through
+ *       `rarityFromObservations`. This is what makes the economy scale past the
+ *       ~48 curated species to everything the recogniser can return, and it is
+ *       the only path through which epic/legendary is reachable for an
+ *       uncurated species.
+ *   (c) undefined — no catalogue entry AND no observation count (offline, or the
+ *       provider supplies no taxon). The scoring engine then applies its generic
+ *       category default, which is the ONLY place the 'rare' cap still bites.
+ */
 export function rarityForRecognition(recognition: RecognitionResult): Rarity | undefined {
-  return resolveSpeciesRule(recognition.commonName, recognition.scientificName)?.baseRarity;
+  const curated = resolveSpeciesRule(
+    recognition.commonName,
+    recognition.scientificName,
+  )?.baseRarity;
+  if (curated !== undefined) return curated;
+  return rarityFromObservationCount(recognition.observationsCount);
 }
 
 /**

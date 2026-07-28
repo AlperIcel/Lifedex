@@ -33,6 +33,12 @@ export interface InatTaxon {
   preferred_common_name?: string;
   /** Iconic (top-level) taxon, e.g. 'Aves', 'Plantae', 'Fungi'. */
   iconic_taxon_name?: string;
+  /**
+   * GLOBAL observation count for this taxon. score_image sometimes embeds it in
+   * the taxon record; when it does we get the rarity signal for free and skip the
+   * follow-up /v1/taxa lookup entirely.
+   */
+  observations_count?: number;
 }
 
 /** One scored candidate. `combined_score` is a 0..100 percentage. */
@@ -158,6 +164,48 @@ function topResult(results: InatScoreResult[]): InatScoreResult | undefined {
   return results.reduce((best, r) => (scoreOf(r) > scoreOf(best) ? r : best));
 }
 
+/**
+ * The taxon this response resolves to, or undefined when the response is a miss
+ * (no results, below MIN_CONFIDENCE, malformed, or coarser than genus).
+ *
+ * Shared by `mapInatResponse` and `topTaxonId` so both apply EXACTLY the same
+ * acceptance gates — the provider must never look up an observation count for a
+ * taxon the mapper rejected.
+ */
+function acceptedTaxon(
+  res: InatScoreResponse,
+): { taxon: InatTaxon; confidence: number } | undefined {
+  const top = topResult(res.results ?? []);
+  if (top === undefined) return undefined;
+
+  // Wire data is cast unchecked: a missing/NaN combined_score must fail the gate
+  // (not slip through as confidence: NaN, which would poison XP and fail the
+  // RecognitionResult schema). scoreOf() already floors it to a finite number.
+  const raw = scoreOf(top);
+  const confidence = raw < 0 ? 0 : Math.max(0, Math.min(1, raw / 100));
+  if (confidence < MIN_CONFIDENCE) return undefined;
+
+  // Guard the nested taxon too — a malformed result must map to NO_CATCH, not
+  // throw a TypeError (which the provider would misread as "iNat is down").
+  const taxon = top.taxon as InatTaxon | undefined;
+  if (taxon === undefined || typeof taxon.name !== 'string' || taxon.name.length === 0) {
+    return undefined;
+  }
+  if (!isGenusOrFiner(taxon)) return undefined;
+
+  return { taxon, confidence };
+}
+
+/**
+ * The iNaturalist taxon id of the accepted top candidate, or undefined for a
+ * miss. The provider uses it to look up the taxon's global observation count
+ * (the rarity signal) when the score response didn't already embed one.
+ */
+export function topTaxonId(res: InatScoreResponse): number | undefined {
+  const id = acceptedTaxon(res)?.taxon.id;
+  return typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
 /* ------------------------------------------------------------------ */
 /* Mapping                                                             */
 /* ------------------------------------------------------------------ */
@@ -172,28 +220,17 @@ function topResult(results: InatScoreResult[]): InatScoreResult | undefined {
  * - captiveStatus: always 'wild' — CV has no captive signal.
  * - sensitivity:   always 'none' — protected-species lookup is a later domain layer.
  * - subjectBox:    always undefined — score_image returns no bounding box.
+ * - observationsCount: `taxon.observations_count` when the response embeds it
+ *                  (free rarity signal); otherwise undefined and the provider
+ *                  fetches it via `topTaxonId` + the public /v1/taxa endpoint.
  *
  * Returns NO_CATCH when there are no results, confidence < MIN_CONFIDENCE, or the
  * top taxon is coarser than genus.
  */
 export function mapInatResponse(res: InatScoreResponse): RecognitionResult {
-  const top = topResult(res.results ?? []);
-  if (top === undefined) return { ...NO_CATCH };
-
-  // Wire data is cast unchecked: a missing/NaN combined_score must fail the gate
-  // (not slip through as confidence: NaN, which would poison XP and fail the
-  // RecognitionResult schema). scoreOf() already floors it to a finite number.
-  const raw = scoreOf(top);
-  const confidence = raw < 0 ? 0 : Math.max(0, Math.min(1, raw / 100));
-  if (confidence < MIN_CONFIDENCE) return { ...NO_CATCH };
-
-  // Guard the nested taxon too — a malformed result must map to NO_CATCH, not
-  // throw a TypeError (which the provider would misread as "iNat is down").
-  const taxon = top.taxon as InatTaxon | undefined;
-  if (taxon === undefined || typeof taxon.name !== 'string' || taxon.name.length === 0) {
-    return { ...NO_CATCH };
-  }
-  if (!isGenusOrFiner(taxon)) return { ...NO_CATCH };
+  const accepted = acceptedTaxon(res);
+  if (accepted === undefined) return { ...NO_CATCH };
+  const { taxon, confidence } = accepted;
 
   const category = categoryFromIconic(taxon.iconic_taxon_name);
 
@@ -213,6 +250,14 @@ export function mapInatResponse(res: InatScoreResponse): RecognitionResult {
   const captiveStatus: CaptiveStatus = 'wild';
   const sensitivity: SensitivityLevel = 'none';
 
+  // Free rarity signal when the response carries it; must be a finite, sane
+  // integer (wire data is unchecked) or the RecognitionResult schema would fail.
+  const rawCount = taxon.observations_count;
+  const observationsCount =
+    typeof rawCount === 'number' && Number.isFinite(rawCount) && rawCount >= 0
+      ? Math.floor(rawCount)
+      : undefined;
+
   return {
     category,
     commonName,
@@ -220,6 +265,7 @@ export function mapInatResponse(res: InatScoreResponse): RecognitionResult {
     confidence,
     captiveStatus,
     sensitivity,
+    observationsCount,
     // subjectBox intentionally omitted: score_image has no localization.
   };
 }

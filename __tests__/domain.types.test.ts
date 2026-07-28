@@ -5,6 +5,7 @@
 import {
   GeoPointSchema,
   RaritySchema,
+  RecognitionResultSchema,
   ScoreResultSchema,
   SightingSchema,
 } from '@/domain/types';
@@ -59,5 +60,37 @@ describe('domain types', () => {
       },
     };
     expect(() => SightingSchema.parse(row)).not.toThrow();
+  });
+
+  describe('RecognitionResult.observationsCount', () => {
+    const base = {
+      category: 'animal',
+      commonName: 'Ghost Orchid',
+      confidence: 0.8,
+      captiveStatus: 'wild',
+      sensitivity: 'none',
+    };
+
+    it('is optional (a catch works with no rarity signal)', () => {
+      expect(() => RecognitionResultSchema.parse(base)).not.toThrow();
+    });
+
+    it('accepts a non-negative integer count', () => {
+      expect(() =>
+        RecognitionResultSchema.parse({ ...base, observationsCount: 0 }),
+      ).not.toThrow();
+      expect(() =>
+        RecognitionResultSchema.parse({ ...base, observationsCount: 850 }),
+      ).not.toThrow();
+    });
+
+    it('rejects negative or fractional counts', () => {
+      expect(() =>
+        RecognitionResultSchema.parse({ ...base, observationsCount: -1 }),
+      ).toThrow();
+      expect(() =>
+        RecognitionResultSchema.parse({ ...base, observationsCount: 12.5 }),
+      ).toThrow();
+    });
   });
 });

@@ -341,4 +341,105 @@ describe('DefaultRarityScoringProvider', () => {
 
     expect(provider.score(input)).toEqual(provider.score(input));
   });
+
+  it('honours the observation count even when NO resolver is wired in', () => {
+    // Defence in depth: the engine reads the same count through the same pure
+    // function the resolver uses, so both wirings agree.
+    const provider = new DefaultRarityScoringProvider();
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'plant', observationsCount: 850 }),
+      confidence: 0.5,
+    });
+    expect(provider.score(input).rarity).toBe('legendary');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Rarity resolution: curated → observations → capped generic fallback */
+/* ------------------------------------------------------------------ */
+
+describe('scoreSighting — rarity resolution chain', () => {
+  it('(a) an explicit curated baseRarity outranks the observation count', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'plant', observationsCount: 3_000_000 }),
+    });
+    // 3 M observations would be 'common' on the curve; curation wins.
+    expect(scoreSighting(input, 'legendary').rarity).toBe('legendary');
+  });
+
+  it('(b) the observation count drives rarity when there is no curated rule', () => {
+    const cases: Array<[number, string]> = [
+      [3_000_000, 'common'],
+      [135_000, 'uncommon'],
+      [68_000, 'rare'],
+      [3_200, 'epic'],
+      [850, 'legendary'],
+    ];
+    for (const [count, expected] of cases) {
+      const input = makeInput({
+        recognition: makeRecognition({ category: 'plant', observationsCount: count }),
+        confidence: 0.8,
+      });
+      expect(scoreSighting(input).rarity).toBe(expected);
+    }
+  });
+
+  it('(b) pays real XP for a rarely observed species (the reveal actually lands)', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'animal', observationsCount: 850 }),
+      confidence: 1.0,
+      sensitivity: 'none',
+      captiveStatus: 'wild',
+    });
+    // base(legendary)=500, confMult=1.0, cat(animal)=1.1 → 550
+    const result = scoreSighting(input);
+    expect(result.rarity).toBe('legendary');
+    expect(result.xp).toBe(550);
+  });
+
+  it('(c) the "rare" cap now applies ONLY to the generic fallback', () => {
+    // No curated rule, no count → generic guess, still capped at 'rare'.
+    const noSignal = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 0.99,
+    });
+    expect(scoreSighting(noSignal).rarity).toBe('rare');
+
+    // Same species WITH a count is free to exceed the cap.
+    const withSignal = makeInput({
+      recognition: makeRecognition({ category: 'animal', observationsCount: 900 }),
+      confidence: 0.99,
+    });
+    expect(scoreSighting(withSignal).rarity).toBe('legendary');
+  });
+
+  it('(c) a malformed count is ignored and falls through to the generic default', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'plant', observationsCount: NaN }),
+      confidence: 0.5,
+    });
+    expect(scoreSighting(input).rarity).toBe('common');
+  });
+
+  it('leaves every downstream rule (quality, captive, duplicate) intact', () => {
+    const legendaryCount = { category: 'animal' as const, observationsCount: 850 };
+
+    // Quality gate still downgrades one tier from the resolved rarity.
+    const poor = makeInput({
+      recognition: makeRecognition(legendaryCount),
+      confidence: 1.0,
+      qualityOk: false,
+    });
+    expect(scoreSighting(poor).rarity).toBe('epic');
+
+    // Zoo/captive still forces 'common' regardless of how rare the taxon is.
+    const zoo = makeInput({
+      recognition: makeRecognition(legendaryCount),
+      confidence: 1.0,
+      captiveStatus: 'zoo_captive',
+    });
+    expect(scoreSighting(zoo).rarity).toBe('common');
+    expect(zoo.recognition.observationsCount).toBe(850);
+    expect(scoreSighting(zoo).xp).toBeLessThanOrEqual(15);
+  });
 });

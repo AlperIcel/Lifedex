@@ -5,6 +5,7 @@
 import {
   MIN_CONFIDENCE,
   mapInatResponse,
+  topTaxonId,
   type InatScoreResponse,
 } from '../inatMapping';
 
@@ -290,5 +291,117 @@ describe('mapInatResponse — top result selection', () => {
     const r = mapInatResponse(res);
     expect(r.commonName).toBe('Right Bird');
     expect(r.confidence).toBeCloseTo(0.88);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Observation count — the rarity signal                               */
+/* ------------------------------------------------------------------ */
+
+describe('mapInatResponse — observationsCount', () => {
+  it('passes through an embedded observations_count (free rarity signal)', () => {
+    const r = mapInatResponse(
+      oneResult(90, {
+        id: 40,
+        name: 'Epipogium aphyllum',
+        rank: 'species',
+        preferred_common_name: 'Ghost Orchid',
+        iconic_taxon_name: 'Plantae',
+        observations_count: 850,
+      }),
+    );
+    expect(r.observationsCount).toBe(850);
+  });
+
+  it('is undefined when the response carries no count (provider fetches it)', () => {
+    const r = mapInatResponse(
+      oneResult(90, {
+        id: 41,
+        name: 'Vulpes vulpes',
+        rank: 'species',
+        iconic_taxon_name: 'Mammalia',
+      }),
+    );
+    expect(r.observationsCount).toBeUndefined();
+  });
+
+  it('rejects malformed counts rather than emitting a schema-invalid value', () => {
+    const bad = [NaN, -1, Infinity, 'lots'] as unknown[];
+    for (const value of bad) {
+      const r = mapInatResponse(
+        oneResult(90, {
+          id: 42,
+          name: 'Vulpes vulpes',
+          rank: 'species',
+          iconic_taxon_name: 'Mammalia',
+          observations_count: value,
+        } as unknown as InatScoreResponse['results'][number]['taxon']),
+      );
+      expect(r.observationsCount).toBeUndefined();
+    }
+  });
+
+  it('floors a fractional count (the schema demands an integer)', () => {
+    const r = mapInatResponse(
+      oneResult(90, {
+        id: 43,
+        name: 'Vulpes vulpes',
+        rank: 'species',
+        iconic_taxon_name: 'Mammalia',
+        observations_count: 12.9,
+      }),
+    );
+    expect(r.observationsCount).toBe(12);
+  });
+});
+
+describe('topTaxonId — same acceptance gates as mapInatResponse', () => {
+  const catchable = {
+    id: 50,
+    name: 'Vulpes vulpes',
+    rank: 'species',
+    iconic_taxon_name: 'Mammalia',
+  } as const;
+
+  it('returns the accepted taxon id', () => {
+    expect(topTaxonId(oneResult(90, catchable))).toBe(50);
+  });
+
+  it('returns the id of the HIGHEST scoring candidate, matching the mapper', () => {
+    const res: InatScoreResponse = {
+      total_results: 2,
+      results: [
+        { combined_score: 30, taxon: { id: 51, name: 'Wrong', rank: 'species' } },
+        { combined_score: 88, taxon: { id: 52, name: 'Right', rank: 'species' } },
+      ],
+    };
+    expect(topTaxonId(res)).toBe(52);
+    expect(mapInatResponse(res).scientificName).toBe('Right');
+  });
+
+  it('is undefined for every case the mapper treats as NO_CATCH', () => {
+    // no results
+    expect(topTaxonId({ total_results: 0, results: [] })).toBeUndefined();
+    // below MIN_CONFIDENCE
+    expect(topTaxonId(oneResult(MIN_CONFIDENCE * 100 - 1, catchable))).toBeUndefined();
+    // coarser than genus
+    expect(
+      topTaxonId(
+        oneResult(95, { id: 53, name: 'Canidae', rank: 'family', rank_level: 30 }),
+      ),
+    ).toBeUndefined();
+    // missing taxon
+    expect(
+      topTaxonId({ total_results: 1, results: [{ combined_score: 95 }] } as unknown as InatScoreResponse),
+    ).toBeUndefined();
+  });
+
+  it('is undefined for a missing or nonsensical taxon id', () => {
+    expect(
+      topTaxonId(oneResult(90, { name: 'Vulpes vulpes', rank: 'species' } as never)),
+    ).toBeUndefined();
+    expect(
+      topTaxonId(oneResult(90, { id: -3, name: 'Vulpes vulpes', rank: 'species' })),
+    ).toBeUndefined();
   });
 });

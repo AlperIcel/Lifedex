@@ -17,17 +17,25 @@
  * No rarity up-/down-grades happen after the quality gate — the rarity returned
  * reflects the actual species tier, not an ephemeral capture quality.
  *
- * NOTE on rarity source: `ScoreInput.recognition` (RecognitionResult) does not
- * carry a rarity field — rarity is determined by SpeciesRule lookup in the
- * pipeline before scoring. The pipeline should derive `baseRarity` from the
- * matched SpeciesRule and pass it via `ScoreInput`'s `recognition.sensitivity`
- * + category. Since ScoreInput has no explicit rarity field, this engine
- * derives a *default* rarity from confidence + category as a sensible fallback
- * when no SpeciesRule is matched. Callers that do have a SpeciesRule should
- * pass `baseRarity` as the optional second argument to `scoreSighting`.
+ * RARITY RESOLUTION (three tiers, highest priority first):
+ *   (a) `baseRarity` argument — the curated SpeciesRule looked up by the caller
+ *       (see `speciesRules.rarityForRecognition`). Authoritative.
+ *   (b) `recognition.observationsCount` — the taxon's GLOBAL iNaturalist
+ *       observation count, mapped through `observationRarity.ts`. This scales the
+ *       economy to every species the recogniser knows, and is the reason
+ *       epic/legendary is reachable at all for uncurated species.
+ *   (c) the generic category+confidence default below. Reached only when there is
+ *       neither a curated rule nor an observation count (offline, or a provider
+ *       that supplies no taxon). This tier — and ONLY this tier — is capped at
+ *       'rare', because a guess from category alone has not earned more.
+ *
+ * Tier (b) is applied here as well as in the caller's resolver so the engine
+ * behaves identically whether or not a species-rule resolver was wired in; both
+ * paths read the same count through the same pure function, so they agree.
  */
 
 import type { RarityScoringProvider } from '../providers/interfaces';
+import { rarityFromObservationCount } from './observationRarity';
 import type { Category, Rarity, ScoreInput, ScoreResult } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -53,9 +61,11 @@ const RARITY_ORDER: Rarity[] = [
 ];
 
 /**
- * Default rarity when no SpeciesRule is available, derived from category.
- * Animals & mushrooms skew rarer by default; plants & trees are common.
- * Confidence threshold nudges the tier up one step.
+ * LAST-RESORT default rarity — used only when there is neither a curated
+ * SpeciesRule nor an observation count. Derived from category: animals &
+ * mushrooms skew rarer; plants & trees are common. High confidence nudges the
+ * tier up one step. Capped at 'rare' on purpose: a guess made from category
+ * alone must not be able to mint epic/legendary.
  */
 const DEFAULT_RARITY_BY_CATEGORY: Record<Category, Rarity> = {
   animal: 'uncommon',
@@ -105,7 +115,8 @@ function downgradeRarity(r: Rarity): Rarity {
  * same XP and rarity — no randomness, no side effects.
  *
  * `baseRarity` — the species-level rarity from a SpeciesRule lookup. When
- * omitted the engine falls back to deriving it from category + confidence.
+ * omitted the engine falls back to the taxon's observation count, then to
+ * category + confidence (see the three-tier chain in the file header).
  */
 export function scoreSighting(
   input: ScoreInput,
@@ -122,8 +133,11 @@ export function scoreSighting(
     streak,
   } = input;
 
+  // Rarity resolution: curated rule → real observation frequency → generic
+  // category guess. Only the last tier is capped at 'rare' (see file header).
   const speciesRarity: Rarity =
     baseRarity ??
+    rarityFromObservationCount(recognition.observationsCount) ??
     defaultRarityFromRecognition(recognition.category, confidence);
 
   // Effective rarity used for XP base (may be overridden for captive/quality).

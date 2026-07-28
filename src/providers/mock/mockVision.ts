@@ -5,6 +5,16 @@
  * the imageUri string so repeated calls with the same URI always return the
  * same result (useful for tests and UI demos). The hash is a simple djb2
  * variant — no crypto dependency needed.
+ *
+ * `observationsCount` mirrors each species' real GLOBAL iNaturalist observation
+ * count (approximate, rounded — these are hand-entered stand-ins for the live
+ * lookup, not fetched data). They exist so mock mode exercises the same rarity
+ * path as production:
+ *   - The first block of species is ALSO in the curated `speciesRules` catalogue,
+ *     which is authoritative, so their counts are carried but not decisive.
+ *   - The final block is deliberately NOT curated, so their rarity comes purely
+ *     from the observation curve — that is how a mock run shows off rare / epic /
+ *     legendary reveals instead of everything capping at 'rare'.
  */
 import type { RecognitionResult } from '../../domain/types';
 import type { VisionRecognitionProvider } from '../interfaces';
@@ -21,6 +31,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.93,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 230_000,
   },
   {
     category: 'animal',
@@ -29,6 +40,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.88,
     captiveStatus: 'wild',
     sensitivity: 'low',
+    observationsCount: 180_000,
   },
   {
     category: 'animal',
@@ -37,6 +49,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.81,
     captiveStatus: 'wild',
     sensitivity: 'low',
+    observationsCount: 70_000,
   },
   {
     category: 'animal',
@@ -45,6 +58,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.76,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 55_000,
   },
   {
     category: 'animal',
@@ -53,6 +67,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.91,
     captiveStatus: 'wild',
     sensitivity: 'protected',
+    observationsCount: 5_400,
   },
   {
     category: 'animal',
@@ -61,6 +76,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.97,
     captiveStatus: 'domestic',
     sensitivity: 'none',
+    observationsCount: 120_000,
   },
   {
     category: 'animal',
@@ -69,6 +85,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.96,
     captiveStatus: 'domestic',
     sensitivity: 'none',
+    observationsCount: 95_000,
   },
   // ── plants ─────────────────────────────────────────────────────────────
   {
@@ -78,6 +95,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.95,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 620_000,
   },
   {
     category: 'plant',
@@ -86,6 +104,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.84,
     captiveStatus: 'wild',
     sensitivity: 'protected',
+    observationsCount: 2_400,
   },
   {
     category: 'plant',
@@ -94,6 +113,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.92,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 250_000,
   },
   // ── trees ──────────────────────────────────────────────────────────────
   {
@@ -103,6 +123,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.89,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 155_000,
   },
   {
     category: 'tree',
@@ -111,6 +132,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.87,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 90_000,
   },
   {
     category: 'tree',
@@ -119,6 +141,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.79,
     captiveStatus: 'wild',
     sensitivity: 'low',
+    observationsCount: 45_000,
   },
   // ── mushrooms ──────────────────────────────────────────────────────────
   {
@@ -128,6 +151,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.94,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 185_000,
   },
   {
     category: 'mushroom',
@@ -136,6 +160,7 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.82,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 42_000,
   },
   {
     category: 'mushroom',
@@ -144,6 +169,56 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     confidence: 0.86,
     captiveStatus: 'wild',
     sensitivity: 'none',
+    observationsCount: 36_000,
+  },
+  // ── UNCURATED — rarity comes purely from the observation curve ──────────
+  // None of these are in `speciesRules`, so they take the same path a real
+  // uncurated iNat catch takes: observationsCount → rarityFromObservations.
+  // They are what makes a mock run produce rare / epic / legendary reveals.
+  {
+    category: 'animal',
+    commonName: 'Common Wall Lizard',
+    scientificName: 'Podarcis muralis',
+    confidence: 0.83,
+    captiveStatus: 'wild',
+    sensitivity: 'none',
+    observationsCount: 68_000, // → rare
+  },
+  {
+    category: 'animal',
+    commonName: 'Alpine Salamander',
+    scientificName: 'Salamandra atra',
+    confidence: 0.78,
+    captiveStatus: 'wild',
+    sensitivity: 'sensitive',
+    observationsCount: 3_200, // → epic
+  },
+  {
+    category: 'plant',
+    commonName: 'Wood Anemone',
+    scientificName: 'Anemonoides nemorosa',
+    confidence: 0.9,
+    captiveStatus: 'wild',
+    sensitivity: 'none',
+    observationsCount: 135_000, // → uncommon
+  },
+  {
+    category: 'plant',
+    commonName: 'Ghost Orchid',
+    scientificName: 'Epipogium aphyllum',
+    confidence: 0.72,
+    captiveStatus: 'wild',
+    sensitivity: 'protected',
+    observationsCount: 850, // → legendary
+  },
+  {
+    category: 'mushroom',
+    commonName: 'Bleeding Tooth Fungus',
+    scientificName: 'Hydnellum peckii',
+    confidence: 0.8,
+    captiveStatus: 'wild',
+    sensitivity: 'none',
+    observationsCount: 4_700, // → epic
   },
 ];
 

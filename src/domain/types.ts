@@ -93,6 +93,16 @@ export const RecognitionResultSchema = z.object({
   sensitivity: SensitivityLevelSchema,
   /** Bounding box of the subject (from object detection), if available. */
   subjectBox: NormalizedRectSchema.optional(),
+  /**
+   * GLOBAL number of iNaturalist observations for this taxon — how often humans
+   * have recorded this species worldwide. Drives rarity for every species that
+   * is NOT in the curated `speciesRules` catalogue (see `observationRarity.ts`).
+   *
+   * Best-effort and optional: absent when offline, when the provider has no
+   * taxon id, or when the lookup failed. A missing count never blocks a catch —
+   * scoring falls back to the generic category default.
+   */
+  observationsCount: z.number().int().nonnegative().optional(),
 });
 export type RecognitionResult = z.infer<typeof RecognitionResultSchema>;
 

@@ -251,7 +251,9 @@ field persisted — already fuzzed), `src/providers/inaturalist/inatClient.ts`,
 `src/providers/plantnet/plantnetClient.ts`, `src/providers/google/
 visionClient.ts` (all three: photo only in the request body, no lat/lng, no
 device or user identifiers), `src/lib/lore.ts` (Wikipedia call carries only
-the species name), `src/screens/SettingsScreen.tsx` (real export/delete
+the species name), `src/lib/inatObservations.ts` (rarity lookup carries only
+a numeric taxon id — no photo, no location, no identifiers, no auth header),
+`src/screens/SettingsScreen.tsx` (real export/delete
 implementation), `package.json` (no ad/analytics/crash SDK dependency
 present).
 
