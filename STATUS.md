@@ -47,6 +47,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Solo-cut (v1) | ✅ done — Ranks tab replaced by local **Stats & Achievements**; simulated players gone from the tab bar; community push code-gated OFF (`src/config/features.ts`) |
 | Community feed + leaderboard | ⏸ built, OFF by default for v1 (single-player); `LeaderboardScreen`/`src/lib/leaderboard.ts` kept for v1.1, just not wired into a tab |
 | Design (all 8 screens + tab bar) | ✅ Apple-level overhaul (Ionicons, haptics, motion) |
+| Game-feel & retention | ✅ escalated epic/legendary reveal + visible level-up + sound (expo-audio, placeholder WAVs) + daily quests/species-of-the-day + achievement XP rewards + Living-Dex silhouettes + wonder-first onboarding + reduce-motion a11y |
 | Localization | ✅ EN/DE — device-default + in-app switch (Settings); `src/i18n/` |
 | Settings / privacy / export / delete | ✅ game-style sections + real haptics/units toggles (`store/settings.ts`) |
 | Maps | ⚠️ stylised MockMapView; native gated behind an (unset) key + dev build |
@@ -56,9 +57,15 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | EAS build / store / push / monetization | ❌ not built |
 | GDPR deletion/export | ⚠️ local + community rows done; Storage files + full flow partial |
 
-**Honest read (dual model review):** clean, well-tested skeleton (~B / 7-10 eng),
-but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate ID,
-real accounts, scale moderation) remain.
+**Honest read (updated 2026-07-29):** the hardest product-defining parts are now
+DONE — species-accurate recognition (live-verified), a scalable context-honest
+rarity economy, and a genuine game-feel layer (escalated reveal + visible
+level-up + sound + daily loop + achievement rewards + wonder onboarding +
+Living-Dex + reduce-motion a11y). This is a coherent, well-tested single-player
+v1 (~565 tests). What stands between here and a store launch is mostly OWNER /
+process work, not core invention: the EAS dev build (queued), field playtesting,
+recognition proxies deployed, Play closed testing (14-day clock), store assets,
+and content scale (bigger catalogue). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
 - **Overnight game-feel + retention wave (2026-07-29, studio plan + audit).** On
