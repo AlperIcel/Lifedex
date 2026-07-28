@@ -3,6 +3,7 @@
  *
  * Modal screen opened from the Home gear icon. Sections:
  *   - Profile              read-only explorer name/level/XP; rename is "coming soon"
+ *   - Language              switch the app's display language (EN/DE)
  *   - Gameplay              distance units (real), haptics (real), sound (coming soon)
  *   - Notifications         placeholder only — no backend, clearly marked
  *   - Privacy & data        data export, delete-all (pre-existing, unchanged behaviour)
@@ -28,8 +29,94 @@ import { settingsStore, useSettings, type DistanceUnits } from '@/store/settings
 import { haptics } from '@/utils/haptics';
 import { supabase } from '@/lib/supabase';
 import type { RootStackParamList } from '@/navigation/types';
+import { useT, useLang, setLang, LANGS, LANG_LABEL } from '@/i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
+
+const C = {
+  en: {
+    soon: 'SOON',
+    title: 'Settings',
+    done: 'Done',
+    profile: 'Profile',
+    changeDisplayName: 'Change display name',
+    changeDisplayNameSub: 'Pick a new explorer name',
+    language: 'Language',
+    gameplay: 'Gameplay',
+    distanceUnits: 'Distance units',
+    distanceUnitsSub: 'Used for maps and distance readouts',
+    haptics: 'Haptics',
+    hapticsSub: 'Buzz on captures, taps and rewards',
+    soundMusic: 'Sound & music',
+    soundMusicSub: 'No audio yet — silent by design',
+    notifications: 'Notifications',
+    dailyReminder: 'Daily reminder',
+    dailyReminderSub: 'A nudge to keep your streak alive',
+    rareSpeciesNearby: 'Rare species nearby',
+    rareSpeciesNearbySub: 'Alert when something rare is close',
+    notificationsNote:
+      'There is no notification backend yet. Nothing is scheduled or sent, and this section will ask for permission honestly once it does something.',
+    privacyData: 'Privacy & data',
+    privacyNote:
+      'Your original photos and exact location never leave this device. Only an AI card and a fuzzed location are shared to the community feed.',
+    exportData: 'Export my data',
+    exportDataSub: 'Share a JSON copy of your captures',
+    dataExportShareTitle: 'LifeDex data export',
+    deleteAllData: 'Delete all my data',
+    deleteConfirmTitle: 'Delete all data?',
+    deleteConfirmMessage: 'This removes your captures, profile and signs you out. It cannot be undone.',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    info: 'Info',
+    howItWorks: 'How it works',
+    howItWorksSub: 'Discovery rules & how LifeDex treats wildlife',
+    version: 'Version',
+    tagline: "LifeDex — discover, don't disturb.",
+    credits:
+      'Species recognition is powered by the iNaturalist Computer Vision API and Pl@ntNet. Species facts and lore are sourced from Wikipedia. LifeDex is not affiliated with, and is not endorsed by, any of these projects.',
+  },
+  de: {
+    soon: 'Bald',
+    title: 'Einstellungen',
+    done: 'Fertig',
+    profile: 'Profil',
+    changeDisplayName: 'Anzeigename ändern',
+    changeDisplayNameSub: 'Wähle einen neuen Entdeckernamen',
+    language: 'Sprache',
+    gameplay: 'Gameplay',
+    distanceUnits: 'Entfernungseinheiten',
+    distanceUnitsSub: 'Wird für Karten und Entfernungsangaben verwendet',
+    haptics: 'Haptik',
+    hapticsSub: 'Vibriert bei Fängen, Taps und Belohnungen',
+    soundMusic: 'Sound & Musik',
+    soundMusicSub: 'Noch kein Ton — bewusst stumm',
+    notifications: 'Benachrichtigungen',
+    dailyReminder: 'Tägliche Erinnerung',
+    dailyReminderSub: 'Ein Anstoß, damit deine Serie nicht abreißt',
+    rareSpeciesNearby: 'Seltene Art in der Nähe',
+    rareSpeciesNearbySub: 'Meldet sich, wenn etwas Seltenes in der Nähe ist',
+    notificationsNote:
+      'Es gibt noch kein Benachrichtigungs-Backend. Es wird nichts geplant oder gesendet — dieser Bereich fragt ehrlich um Erlaubnis, sobald er etwas tut.',
+    privacyData: 'Privatsphäre & Daten',
+    privacyNote:
+      'Deine Originalfotos und dein genauer Standort verlassen nie dieses Gerät. Nur eine KI-Karte und ein unscharfer Standort werden im Community-Feed geteilt.',
+    exportData: 'Daten exportieren',
+    exportDataSub: 'Teile eine JSON-Kopie deiner Fänge',
+    dataExportShareTitle: 'LifeDex-Datenexport',
+    deleteAllData: 'Alle Daten löschen',
+    deleteConfirmTitle: 'Alle Daten löschen?',
+    deleteConfirmMessage: 'Das entfernt deine Fänge und dein Profil und meldet dich ab. Das kann nicht rückgängig gemacht werden.',
+    cancel: 'Abbrechen',
+    delete: 'Löschen',
+    info: 'Info',
+    howItWorks: 'Wie es funktioniert',
+    howItWorksSub: 'Entdeckungsregeln & wie LifeDex mit Wildtieren umgeht',
+    version: 'Version',
+    tagline: 'LifeDex — entdecken, nicht stören.',
+    credits:
+      'Die Arterkennung nutzt die iNaturalist Computer Vision API und Pl@ntNet. Artfakten und Hintergrundwissen stammen von Wikipedia. LifeDex steht in keiner Verbindung zu diesen Projekten und wird von ihnen nicht unterstützt.',
+  },
+} as const;
 
 /* ------------------------------------------------------------------ */
 /* Small row primitives                                                */
@@ -47,9 +134,10 @@ function Row({ label, value }: { label: string; value: string }): React.JSX.Elem
 
 /** Muted, non-interactive pill marking a feature that isn't built yet. */
 function SoonBadge(): React.JSX.Element {
+  const t = useT(C);
   return (
     <View style={styles.soonBadge}>
-      <Text style={styles.soonBadgeText}>SOON</Text>
+      <Text style={styles.soonBadgeText}>{t('soon')}</Text>
     </View>
   );
 }
@@ -135,6 +223,8 @@ function SettingsRow({
 export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   const { profile } = useLifeDexStore();
   const settings = useSettings();
+  const t = useT(C);
+  const lang = useLang();
 
   const exportData = async (): Promise<void> => {
     try {
@@ -144,7 +234,7 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         sighting: { ...c.sighting, privatePhotoUri: undefined },
       }));
       const json = JSON.stringify({ profile: lifeDexStore.getProfile(), captures }, null, 2);
-      await Share.share({ message: json, title: 'LifeDex data export' });
+      await Share.share({ message: json, title: t('dataExportShareTitle') });
     } catch {
       // user cancelled or share unavailable
     }
@@ -152,12 +242,12 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
 
   const deleteAll = (): void => {
     Alert.alert(
-      'Delete all data?',
-      'This removes your captures, profile and signs you out. It cannot be undone.',
+      t('deleteConfirmTitle'),
+      t('deleteConfirmMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('delete'),
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -205,12 +295,12 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   return (
     <ScreenContainer
       largeTitle
-      title="Settings"
+      title={t('title')}
       scrollable
-      rightAccessory={<Button title="Done" variant="ghost" size="sm" onPress={() => navigation.goBack()} />}
+      rightAccessory={<Button title={t('done')} variant="ghost" size="sm" onPress={() => navigation.goBack()} />}
     >
       {/* ── Profile ── */}
-      <SectionHeader title="Profile" />
+      <SectionHeader title={t('profile')} />
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
           <Text style={styles.avatarInitial}>{avatarInitial}</Text>
@@ -231,20 +321,41 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <SettingsRow
           icon="person-outline"
           iconColor={colors.textTertiary}
-          label="Change display name"
-          subtitle="Pick a new explorer name"
+          label={t('changeDisplayName')}
+          subtitle={t('changeDisplayNameSub')}
           right={<SoonBadge />}
           disabled
         />
       </View>
 
+      {/* ── Language ── */}
+      <SectionHeader title={t('language')} />
+      <View style={styles.card}>
+        {LANGS.map((l, i) => (
+          <React.Fragment key={l}>
+            <SettingsRow
+              icon="language-outline"
+              label={LANG_LABEL[l]}
+              onPress={() => {
+                haptics.tap();
+                setLang(l);
+              }}
+              right={
+                lang === l ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : undefined
+              }
+            />
+            {i < LANGS.length - 1 ? <View style={styles.sep} /> : null}
+          </React.Fragment>
+        ))}
+      </View>
+
       {/* ── Gameplay ── */}
-      <SectionHeader title="Gameplay" />
+      <SectionHeader title={t('gameplay')} />
       <View style={styles.card}>
         <SettingsRow
           icon="speedometer-outline"
-          label="Distance units"
-          subtitle="Used for maps and distance readouts"
+          label={t('distanceUnits')}
+          subtitle={t('distanceUnitsSub')}
           right={
             <View style={styles.unitsToggle}>
               <Chip label="KM" selected={settings.units === 'km'} onPress={() => handleUnitsChange('km')} />
@@ -255,8 +366,8 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <View style={styles.sep} />
         <SettingsRow
           icon="phone-portrait-outline"
-          label="Haptics"
-          subtitle="Buzz on captures, taps and rewards"
+          label={t('haptics')}
+          subtitle={t('hapticsSub')}
           right={
             <Switch
               value={settings.hapticsEnabled}
@@ -264,7 +375,7 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
               trackColor={{ false: colors.surfaceHigh, true: colors.accent }}
               thumbColor={colors.textPrimary}
               ios_backgroundColor={colors.surfaceHigh}
-              accessibilityLabel="Haptics"
+              accessibilityLabel={t('haptics')}
             />
           }
         />
@@ -272,21 +383,21 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <SettingsRow
           icon="musical-notes-outline"
           iconColor={colors.textTertiary}
-          label="Sound & music"
-          subtitle="No audio yet — silent by design"
+          label={t('soundMusic')}
+          subtitle={t('soundMusicSub')}
           right={<SoonBadge />}
           disabled
         />
       </View>
 
       {/* ── Notifications ── */}
-      <SectionHeader title="Notifications" />
+      <SectionHeader title={t('notifications')} />
       <View style={styles.card}>
         <SettingsRow
           icon="notifications-outline"
           iconColor={colors.textTertiary}
-          label="Daily reminder"
-          subtitle="A nudge to keep your streak alive"
+          label={t('dailyReminder')}
+          subtitle={t('dailyReminderSub')}
           right={<SoonBadge />}
           disabled
         />
@@ -294,63 +405,53 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <SettingsRow
           icon="sparkles-outline"
           iconColor={colors.textTertiary}
-          label="Rare species nearby"
-          subtitle="Alert when something rare is close"
+          label={t('rareSpeciesNearby')}
+          subtitle={t('rareSpeciesNearbySub')}
           right={<SoonBadge />}
           disabled
         />
       </View>
-      <Text style={styles.note}>
-        There is no notification backend yet. Nothing is scheduled or sent, and this section will ask
-        for permission honestly once it does something.
-      </Text>
+      <Text style={styles.note}>{t('notificationsNote')}</Text>
 
       {/* ── Privacy & data ── */}
-      <SectionHeader title="Privacy & data" />
-      <Text style={styles.note}>
-        Your original photos and exact location never leave this device. Only an AI card and a fuzzed
-        location are shared to the community feed.
-      </Text>
+      <SectionHeader title={t('privacyData')} />
+      <Text style={styles.note}>{t('privacyNote')}</Text>
       <View style={styles.card}>
         <SettingsRow
           icon="download-outline"
-          label="Export my data"
-          subtitle="Share a JSON copy of your captures"
+          label={t('exportData')}
+          subtitle={t('exportDataSub')}
           onPress={() => void exportData()}
         />
         <View style={styles.sep} />
         <SettingsRow
           icon="trash-outline"
-          label="Delete all my data"
+          label={t('deleteAllData')}
           destructive
           onPress={deleteAll}
         />
       </View>
 
       {/* ── Info ── */}
-      <SectionHeader title="Info" />
+      <SectionHeader title={t('info')} />
       <View style={styles.card}>
         <SettingsRow
           icon="information-circle-outline"
-          label="How it works"
-          subtitle="Discovery rules & how LifeDex treats wildlife"
+          label={t('howItWorks')}
+          subtitle={t('howItWorksSub')}
           onPress={() => navigation.navigate('Onboarding')}
           chevron
         />
         <View style={styles.sep} />
-        <Row label="Version" value={appVersion} />
+        <Row label={t('version')} value={appVersion} />
       </View>
       <View style={styles.card}>
         <View style={styles.aboutRow}>
           <Ionicons name="leaf-outline" size={18} color={colors.accent} />
-          <Text style={styles.aboutText}>LifeDex — discover, don&apos;t disturb.</Text>
+          <Text style={styles.aboutText}>{t('tagline')}</Text>
         </View>
         <View style={styles.sep} />
-        <Text style={styles.creditsText}>
-          Species recognition is powered by the iNaturalist Computer Vision API and Pl@ntNet. Species
-          facts and lore are sourced from Wikipedia. LifeDex is not affiliated with, and is not
-          endorsed by, any of these projects.
-        </Text>
+        <Text style={styles.creditsText}>{t('credits')}</Text>
       </View>
     </ScreenContainer>
   );
