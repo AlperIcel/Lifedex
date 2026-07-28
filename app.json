@@ -12,7 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0B0F0E"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.lifedex.app",
@@ -43,7 +45,10 @@
     ],
     "extra": {
       "AI_PROVIDER": "mock",
-      "MAPS_PROVIDER": "mock"
+      "MAPS_PROVIDER": "mock",
+      "eas": {
+        "projectId": "5c92112f-1208-4dcb-b5f1-2cfc8f73b9dc"
+      }
     }
   }
 }
