@@ -184,8 +184,9 @@ Community feed · shared map · real accounts (Apple/Google) · server-side scor
 validation · report button + `moderation_status` review · push · AI card restyle.
 
 ### Smaller follow-ups
-- **km/mi:** wire `formatDistance` (`store/settings.ts`) into `CardDetailScreen`
-  location/precision labels.
+- ✅ **km/mi done:** `formatDistance` (`store/settings.ts`) is now read by CardDetail
+  (precision/radius), Home ("X away"), and Result (fuzzed-location note) — the
+  units toggle in Settings updates them live. (Map circle stays geometric.)
 - iNat `Bearer` prefix: verify at integration (comment in `inatClient.ts`).
 
 ## Owner setup (unlocks features; all guarded — app works without them)

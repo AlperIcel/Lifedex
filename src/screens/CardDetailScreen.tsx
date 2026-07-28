@@ -40,6 +40,7 @@ import { RarityBadge } from '@/components/RarityBadge';
 import type { Rarity, Sighting } from '@/domain/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import { useLore } from '@/lib/lore';
+import { useSettings, formatDistance, type DistanceUnits } from '@/store/settings';
 import { useT, useCommon } from '@/i18n';
 import {
   colors,
@@ -81,8 +82,7 @@ const C = {
     location: 'Location',
     locationHidden: 'Hidden for species protection',
     exactLocationProtected: 'Exact location protected',
-    radiusKm: '±{n} km radius',
-    radiusM: '±{n} m radius',
+    radius: '±{d} radius',
     about: 'About',
     safetyEthics: 'Safety & Ethics',
     privacyNotice:
@@ -106,8 +106,7 @@ const C = {
     location: 'Ort',
     locationHidden: 'Zum Artenschutz verborgen',
     exactLocationProtected: 'Genauer Standort geschützt',
-    radiusKm: '±{n} km Umkreis',
-    radiusM: '±{n} m Umkreis',
+    radius: '±{d} Umkreis',
     about: 'Über',
     safetyEthics: 'Sicherheit & Ethik',
     privacyNotice:
@@ -142,11 +141,9 @@ function formatLocation(sighting: Sighting): string {
   return `${latStr}, ${lngStr}`;
 }
 
-function precisionLabel(t: TFunc, meters: number, hidden: boolean): string {
+function precisionLabel(t: TFunc, meters: number, hidden: boolean, units: DistanceUnits): string {
   if (hidden) return t('exactLocationProtected');
-  if (meters >= 5000) return t('radiusKm', { n: (meters / 1000).toFixed(0) });
-  if (meters >= 1000) return t('radiusKm', { n: (meters / 1000).toFixed(1) });
-  return t('radiusM', { n: meters });
+  return t('radius', { d: formatDistance(meters, units) });
 }
 
 /* ------------------------------------------------------------------ */
@@ -236,6 +233,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
     sighting?.commonName ?? '',
   );
   const t = useT(C);
+  const { units } = useSettings();
   const common = useCommon();
   // Store lookups are synchronous — no loading/error state needed.
   // isFirstDiscovery is not persisted on Sighting (see store notes); default false.
@@ -388,7 +386,7 @@ export function CardDetailScreen({ route, navigation }: Props) {
               value={
                 isHidden
                   ? t('locationHidden')
-                  : `${formatLocation(sighting)} · ${precisionLabel(t, publicLocation.precisionMeters, isHidden)}`
+                  : `${formatLocation(sighting)} · ${precisionLabel(t, publicLocation.precisionMeters, isHidden, units)}`
               }
               valueColor={isHidden ? colors.warning : undefined}
               last

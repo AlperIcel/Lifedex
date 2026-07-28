@@ -45,6 +45,7 @@ import {
 } from '@/store/useLifeDexStore';
 import type { RootStackParamList } from '@/navigation/types';
 import { env } from '@/config/env';
+import { useSettings, formatDistance } from '@/store/settings';
 import {
   colors,
   gutter,
@@ -158,11 +159,6 @@ function relativeTime(isoString: string, t: TFunc): string {
   return t('daysAgo', { days });
 }
 
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)}m`;
-  return `${(meters / 1000).toFixed(1)}km`;
-}
-
 /* ------------------------------------------------------------------ */
 /* Sub-components                                                        */
 /* ------------------------------------------------------------------ */
@@ -222,6 +218,7 @@ function DiscoveryCard({ sighting, onPress }: { sighting: Sighting; onPress: () 
 /** Single row in the Rare Nearby list. */
 function NearbyRareRow({ hint, onPress }: { hint: NearbyRareHint; onPress: () => void }) {
   const t = useT(C);
+  const { units } = useSettings();
   const rarityColor = rarityColors[hint.rarity];
   const icon = CATEGORY_ICON[hint.category] ?? 'help-outline';
 
@@ -245,7 +242,7 @@ function NearbyRareRow({ hint, onPress }: { hint: NearbyRareHint; onPress: () =>
         <View style={styles.nearbyMeta}>
           <RarityBadge rarity={hint.rarity} size="sm" />
           <Text style={styles.nearbyDistance}>
-            {t('away', { distance: formatDistance(hint.distanceMeters) })}
+            {t('away', { distance: formatDistance(hint.distanceMeters, units) })}
           </Text>
         </View>
       </View>

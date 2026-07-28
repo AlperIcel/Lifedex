@@ -64,6 +64,7 @@ import {
 } from '@/theme/theme';
 import type { Rarity, Category } from '@/domain/types';
 import { useT, useCommon } from '@/i18n';
+import { useSettings, formatDistance } from '@/store/settings';
 
 /* ------------------------------------------------------------------ */
 /* i18n                                                                */
@@ -77,7 +78,7 @@ const C = {
     blocked: 'Blocked',
     matchPercent: '{percent}% match',
     locationHidden: 'Location hidden (protected species)',
-    locationFuzzed: 'Location fuzzed to ~{km} km',
+    locationFuzzed: 'Location fuzzed to ~{d}',
     conservationNotice: 'Conservation Notice',
     mockDetectionNotice: 'Mock Detection — real AI recognition not connected yet',
     sightingNotFound: 'Sighting Not Found',
@@ -94,7 +95,7 @@ const C = {
     blocked: 'Blockiert',
     matchPercent: '{percent}% Übereinstimmung',
     locationHidden: 'Standort verborgen (geschützte Art)',
-    locationFuzzed: 'Standort auf ca. {km} km verwischt',
+    locationFuzzed: 'Standort auf ca. {d} verwischt',
     conservationNotice: 'Naturschutzhinweis',
     mockDetectionNotice: 'Mock-Erkennung — echte KI-Erkennung noch nicht angebunden',
     sightingNotFound: 'Sichtung nicht gefunden',
@@ -593,6 +594,7 @@ function StatusBadges({
 
 function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element | null {
   const t = useT(C);
+  const { units } = useSettings();
   if (sighting.publicLocation.hidden) {
     return (
       <View style={styles.locationNote}>
@@ -601,12 +603,11 @@ function LocationNote({ sighting }: { sighting: Sighting }): React.JSX.Element |
       </View>
     );
   }
-  const precisionKm = (sighting.publicLocation.precisionMeters / 1000).toFixed(1);
   if (sighting.publicLocation.precisionMeters > 0) {
     return (
       <View style={styles.locationNote}>
         <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
-        <Text style={styles.locationNoteText}>{t('locationFuzzed', { km: precisionKm })}</Text>
+        <Text style={styles.locationNoteText}>{t('locationFuzzed', { d: formatDistance(sighting.publicLocation.precisionMeters, units) })}</Text>
       </View>
     );
   }
