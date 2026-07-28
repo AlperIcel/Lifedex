@@ -32,12 +32,14 @@ import {
   View,
 } from 'react-native';
 import MapView, { Circle, Marker, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 
 import type { Category, Rarity, Sighting } from '@/domain/types';
-import { colors, radius, rarityColors, spacing, typography } from '@/theme/theme';
+import { colors, elevation, radius, rarityColors, spacing, typography } from '@/theme/theme';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { useLifeDexStore } from '@/store/useLifeDexStore';
 import { env } from '@/config/env';
@@ -155,6 +157,7 @@ const C = {
     exploreBody: 'Tap a pin or protected zone to see what was discovered there.',
     protectedNotice: '🔒 Exact location protected — approximate area shown',
     locationProtected: '🔒 Location protected',
+    recenterA11y: 'Center on my location',
   },
   de: {
     catAll: 'Alle',
@@ -172,6 +175,7 @@ const C = {
     exploreBody: 'Tippe auf einen Pin oder eine geschützte Zone, um zu sehen, was dort entdeckt wurde.',
     protectedNotice: '🔒 Genauer Ort geschützt – ungefähre Fläche angezeigt',
     locationProtected: '🔒 Ort geschützt',
+    recenterA11y: 'Auf meinen Standort zentrieren',
   },
 } as const;
 
@@ -495,6 +499,48 @@ export default function MapScreen({ navigation }: Props) {
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<MapView>(null);
 
+  /* ── Native map: centre on the user's real location ──────────────
+   * Best-effort only, mirrors CaptureScreen's location pattern: try the
+   * instant last-known fix first, fall back to a time-boxed fresh fix, and
+   * silently keep INITIAL_REGION if permission is denied or GPS never
+   * resolves. Never blocks rendering — no-op entirely in mock mode. */
+  const centerOnUserLocation = useCallback(async () => {
+    try {
+      const existing = await Location.getForegroundPermissionsAsync();
+      const granted = existing.granted
+        ? true
+        : (await Location.requestForegroundPermissionsAsync()).granted;
+      if (!granted) return;
+
+      const last = await Location.getLastKnownPositionAsync();
+      const point =
+        last ??
+        (await Promise.race<Location.LocationObject | null>([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+        ]));
+      if (point === null) return;
+
+      mapRef.current?.animateToRegion(
+        {
+          latitude: point.coords.latitude,
+          longitude: point.coords.longitude,
+          latitudeDelta: INITIAL_REGION.latitudeDelta,
+          longitudeDelta: INITIAL_REGION.longitudeDelta,
+        },
+        650,
+      );
+    } catch {
+      // Permission denied / GPS unavailable — keep the default region.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (env.useNativeMaps) {
+      void centerOnUserLocation();
+    }
+  }, [centerOnUserLocation]);
+
   /* ── Derived data ─────────────────────────────────────────────── */
 
   const filtered = useMemo(
@@ -741,6 +787,19 @@ export default function MapScreen({ navigation }: Props) {
         <Text style={styles.privacyText}>{t('privacyBadge')}</Text>
       </View>
 
+      {/* ── Recenter FAB (native map only, bottom-right) ────────── */}
+      {env.useNativeMaps && (
+        <TouchableOpacity
+          onPress={() => void centerOnUserLocation()}
+          style={styles.recenterFab}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={t('recenterA11y')}
+        >
+          <Ionicons name="locate" size={22} color={colors.teal} />
+        </TouchableOpacity>
+      )}
+
       {/* ── Bottom sheet ─────────────────────────────────────── */}
       <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
         {/* Drag handle */}
@@ -913,6 +972,22 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textMuted,
     fontSize: 10,
+  },
+
+  // Recenter FAB (native map only)
+  recenterFab: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: SHEET_PEEK + 12,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface + 'ee',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...elevation.level2,
   },
 
   // Pin marker
