@@ -18,7 +18,7 @@ subject-crop card is public), exact GPS never public (protected species hidden),
 zoo/captive capped. Animals are the headline catch; plants/trees/mushrooms fill
 the everyday gap. Later: premium (AI card restyle, more captures), real map layers.
 
-Stack: Expo RN (SDK 51) + TypeScript strict · Supabase (anon auth, Postgres+RLS,
+Stack: Expo RN (SDK 54, RN 0.81, React 19) + TypeScript strict · Supabase (anon auth, Postgres+RLS,
 Storage) · Google Cloud Vision (real recognition + moderation) · mock providers
 so it runs with **no keys**.
 
@@ -59,6 +59,16 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **SDK 51 → 54 upgrade** (RN 0.74→0.81, React 18→19) so the current Expo Go can
+  run the app. Fixes: `expo-file-system` v19 API moved → import from
+  `expo-file-system/legacy` in `visionClient.ts`; reinstalled pruned deps
+  (`expo-constants`, `babel-preset-expo`, `expo-font`); `react-test-renderer`→19
+  + `@testing-library/react-native`→13 for React 19. All green.
+- **Config fix:** `app.config.js` now routes the new recognition secrets
+  (`INATURALIST_API_TOKEN`, `PLANTNET_API_KEY`, proxies) into `expo.extra` — non-
+  EXPO_PUBLIC vars aren't bundled, so without this the token never reached the app
+  and recognition silently fell back to mock. Verified the token lands in the
+  resolved config.
 - **Species-accurate recognition adapter** (biggest lever, priority #1): iNaturalist
   Computer Vision (fauna/fungi) + PlantNet (flora refiner), env-gated behind
   `AI_PROVIDER=inaturalist`, key-ready like the Google provider — falls back to

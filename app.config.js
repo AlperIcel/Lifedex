@@ -19,5 +19,12 @@ module.exports = () => ({
     MAPS_PROVIDER: process.env.MAPS_PROVIDER ?? appJson.expo.extra?.MAPS_PROVIDER ?? 'mock',
     GOOGLE_CLOUD_VISION_KEY: process.env.GOOGLE_CLOUD_VISION_KEY ?? '',
     VISION_PROXY_URL: process.env.VISION_PROXY_URL ?? '',
+    // Species-accurate recognition (iNaturalist CV + PlantNet). Non-EXPO_PUBLIC
+    // vars are not bundled into the app, so they must be routed through `extra`
+    // to reach Constants.expoConfig.extra at runtime (read in src/config/env.ts).
+    INATURALIST_API_TOKEN: process.env.INATURALIST_API_TOKEN ?? '',
+    INAT_PROXY_URL: process.env.INAT_PROXY_URL ?? '',
+    PLANTNET_API_KEY: process.env.PLANTNET_API_KEY ?? '',
+    PLANTNET_PROXY_URL: process.env.PLANTNET_PROXY_URL ?? '',
   },
 });

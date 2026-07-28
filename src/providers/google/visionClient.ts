@@ -9,7 +9,10 @@
  *
  * base64 read is via expo-file-system; the request uses the plain API key.
  */
-import * as FileSystem from 'expo-file-system';
+// SDK 54: expo-file-system v19 rewrote its API; readAsStringAsync + EncodingType
+// live under the legacy entrypoint. Kept here rather than migrating to the new
+// File API to keep the base64 read a one-line change.
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { env } from '@/config/env';
 import { supabase } from '@/lib/supabase';
