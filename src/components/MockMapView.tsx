@@ -26,6 +26,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import type { Category, Rarity, Sighting } from '@/domain/types';
 import { colors, rarityColors, typography } from '@/theme/theme';
@@ -110,12 +111,12 @@ export function placeMarker(
 /* Visual config                                                       */
 /* ------------------------------------------------------------------ */
 
-const CATEGORY_ICONS: Record<Category, string> = {
-  animal: '🦊',
-  plant: '🌿',
-  tree: '🌳',
-  mushroom: '🍄',
-  unknown: '❓',
+const CATEGORY_ICONS: Record<Category, keyof typeof Ionicons.glyphMap> = {
+  animal: 'paw-outline',
+  plant: 'flower-outline',
+  tree: 'leaf-outline',
+  mushroom: 'nutrition-outline',
+  unknown: 'help-outline',
 };
 
 const HIDDEN_CIRCLE_SIZE = 92;
@@ -172,7 +173,7 @@ function PlayerAvatar(): React.ReactElement {
     <View style={styles.avatarWrap} pointerEvents="none">
       <View style={styles.accuracyRing} />
       <View style={styles.avatarDisc}>
-        <Text style={styles.avatarIcon}>🧭</Text>
+        <Ionicons name="navigate" size={22} color={colors.accent} />
       </View>
     </View>
   );
@@ -253,7 +254,7 @@ export default function MockMapView({
               },
             ]}
           >
-            <Text style={styles.fuzzIcon}>🔒</Text>
+            <Ionicons name="lock-closed" size={22} color={col} />
           </TouchableOpacity>
         );
       })}
@@ -285,7 +286,7 @@ export default function MockMapView({
                 selected && styles.pinSelected,
               ]}
             >
-              <Text style={styles.pinIcon}>{CATEGORY_ICONS[cat]}</Text>
+              <Ionicons name={CATEGORY_ICONS[cat]} size={22} color={col} />
             </View>
             {/* rarity dot + optional count */}
             {count > 1 ? (
@@ -306,14 +307,19 @@ export default function MockMapView({
 /* Palette + styles                                                    */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Procedural-map palette — sourced from theme.ts neutrals (no new raw hex),
+ * picked to preserve the original tones' relative brightness order (land <
+ * block < park < water < parkSmall < road < avenue) so the map stays legible.
+ */
 const mapColors = {
-  land: '#16241c',
-  park: '#1d3a27',
-  parkSmall: '#214330',
-  water: '#123841',
-  road: '#33473d',
-  avenue: '#3c5247',
-  block: '#1b2c23',
+  land: colors.surface,
+  park: colors.surfaceHigh,
+  parkSmall: colors.borderStrong,
+  water: colors.border,
+  road: colors.textDisabled,
+  avenue: colors.textTertiary,
+  block: colors.surfaceElevated,
 };
 
 const styles = StyleSheet.create({
@@ -407,10 +413,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 5,
   },
-  avatarIcon: {
-    fontSize: 24,
-  },
-
   /* Pins */
   pinWrap: {
     position: 'absolute',
@@ -439,11 +441,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   pinSelected: {
-    borderColor: '#fff',
+    borderColor: colors.textPrimary,
     transform: [{ scale: 1.12 }],
-  },
-  pinIcon: {
-    fontSize: 22,
   },
   rarityDot: {
     position: 'absolute',
@@ -470,7 +469,7 @@ const styles = StyleSheet.create({
   },
   countBadgeText: {
     ...typography.label,
-    color: '#06110d',
+    color: colors.background,
     fontWeight: '800',
     fontSize: 10,
   },
@@ -485,8 +484,5 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  fuzzIcon: {
-    fontSize: 22,
   },
 });

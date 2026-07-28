@@ -12,7 +12,7 @@
  * Navigation: tapping a discovery card pushes CardDetail; tapping Capture
  * navigates to the Capture tab; tapping the gear opens Settings.
  */
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -43,6 +43,7 @@ import {
   selectTotalSpecies,
   useLifeDexStore,
 } from '@/store/useLifeDexStore';
+import { loadStreakMeta } from '@/store/persistence';
 import type { RootStackParamList } from '@/navigation/types';
 import { env } from '@/config/env';
 import { useSettings, formatDistance } from '@/store/settings';
@@ -118,6 +119,7 @@ const C = {
     minsAgo: '{mins}m ago',
     hrsAgo: '{hrs}h ago',
     daysAgo: '{days}d ago',
+    streakA11y: '{count} day streak',
   },
   de: {
     subtitle: 'Erfassen · Sammeln · Schützen',
@@ -140,6 +142,7 @@ const C = {
     minsAgo: 'vor {mins}m',
     hrsAgo: 'vor {hrs}h',
     daysAgo: 'vor {days}d',
+    streakA11y: '{count} Tage Serie',
   },
 } as const;
 
@@ -291,6 +294,19 @@ export function HomeScreen(): React.JSX.Element {
 
   const lb = useMemo(() => levelBounds(profile.xp), [profile.xp]);
 
+  // Daily-streak flame — read-only display; nothing here writes streak state.
+  const [streak, setStreak] = useState(0);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const meta = await loadStreakMeta();
+      if (active) setStreak(meta.streak);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleDiscoveryPress = useCallback(
     (sightingId: string) => {
       // CardDetail resolves via getCardById; card ids follow `card-<sightingId>`.
@@ -327,6 +343,16 @@ export function HomeScreen(): React.JSX.Element {
           </View>
 
           <View style={styles.headerActions}>
+            {streak > 0 && (
+              <View
+                style={styles.streakPill}
+                accessible
+                accessibilityLabel={t('streakA11y', { count: streak })}
+              >
+                <Ionicons name="flame" size={14} color={colors.warning} />
+                <Text style={styles.streakCount}>{streak}</Text>
+              </View>
+            )}
             <View style={styles.todayPill}>
               <Text style={styles.todayCount}>{todayCount}</Text>
               <Text style={styles.todayLabel}>{t('today')}</Text>
@@ -477,6 +503,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+  },
+  streakCount: {
+    ...typography.callout,
+    ...{ fontVariant: ['tabular-nums'] as const },
+    color: colors.warning,
+    fontWeight: '700' as const,
   },
   todayPill: {
     flexDirection: 'row',

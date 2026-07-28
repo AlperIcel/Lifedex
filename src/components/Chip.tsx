@@ -34,6 +34,7 @@ export function Chip({ label, selected, onPress, icon, dotColor }: Props): React
   return (
     <Pressable
       onPress={handlePress}
+      hitSlop={6}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={label}

@@ -63,7 +63,8 @@ import {
   typography,
 } from '@/theme/theme';
 import type { Rarity, Category } from '@/domain/types';
-import { useT, useCommon } from '@/i18n';
+import { useT, useCommon, useLang } from '@/i18n';
+import type { Lang } from '@/i18n';
 import { useSettings, formatDistance } from '@/store/settings';
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +88,7 @@ const C = {
     goBack: 'Go Back',
     viewCollection: 'View Collection',
     captureAnother: 'Capture Another',
+    newSpeciesBadge: 'New species!',
   },
   de: {
     cardBackTagline: 'Natur gesammelt',
@@ -104,8 +106,34 @@ const C = {
     goBack: 'Zurück',
     viewCollection: 'Sammlung ansehen',
     captureAnother: 'Nochmal aufnehmen',
+    newSpeciesBadge: 'Neue Art!',
   },
 } as const;
+
+/** Per-tier flavor line shown under the species name — a small emotional
+ * flourish beyond the plain rarity label from `useCommon().rarity`. */
+const RARITY_FLAVOR: Record<Lang, Record<Rarity, string>> = {
+  en: {
+    common: 'Nice find',
+    uncommon: 'Good spot!',
+    rare: 'Rare catch!',
+    epic: 'Epic discovery!',
+    legendary: 'Legendary!',
+  },
+  de: {
+    common: 'Schöner Fund',
+    uncommon: 'Guter Fang!',
+    rare: 'Seltener Fund!',
+    epic: 'Epische Entdeckung!',
+    legendary: 'Legendär!',
+  },
+};
+
+/** Current-language flavor-line lookup, mirrors the `useCommon()` pattern. */
+function useRarityFlavor(): (r: Rarity) => string {
+  const lang = useLang();
+  return (r) => RARITY_FLAVOR[lang][r] ?? RARITY_FLAVOR.en[r];
+}
 
 /* ------------------------------------------------------------------ */
 /* Types & constants                                                    */
@@ -128,6 +156,16 @@ const XP_COUNT_DURATION = 1400;
 
 /** Idle-float full cycle duration (ms). */
 const FLOAT_CYCLE = 2200;
+
+/** Pre-flip card-back glow peak opacity per rarity — anticipation cue: the
+ * rarer the catch, the stronger the card back glows while it waits to flip. */
+const CARD_BACK_GLOW_OPACITY: Record<Rarity, number> = {
+  common: 0.10,
+  uncommon: 0.18,
+  rare: 0.28,
+  epic: 0.42,
+  legendary: 0.62,
+};
 
 /** Delay between staggered reveal items (ms). */
 const STAGGER_DELAY = 90;
@@ -207,6 +245,57 @@ function Reveal({ anim, style, children }: RevealProps): React.JSX.Element {
       ]}
     >
       {children}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* New-species badge — shown only on a species' first-ever capture      */
+/* ------------------------------------------------------------------ */
+
+/** Rarity-tinted "first catch" badge with a gentle breathing pulse once revealed. */
+function NewSpeciesBadge({
+  rarity,
+  active,
+}: {
+  rarity: Rarity;
+  active: boolean;
+}): React.JSX.Element {
+  const t = useT(C);
+  const pulse = useRef(new Animated.Value(1)).current;
+  const color = rarityColors[rarity];
+
+  useEffect(() => {
+    if (!active) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.06,
+          duration: 700,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [active, pulse]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.newBadge,
+        { backgroundColor: rarityTints[rarity], borderColor: color, transform: [{ scale: pulse }] },
+      ]}
+    >
+      <Ionicons name="sparkles" size={13} color={color} />
+      <Text style={[styles.newBadgeText, { color }]}>{t('newSpeciesBadge')}</Text>
     </Animated.View>
   );
 }
@@ -424,13 +513,57 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
   );
 }
 
-/** Card back — shown while the reveal waits. */
-function CardBack(): React.JSX.Element {
+/** Soft rarity-tinted glow behind the card back — pulses while the card
+ * waits to flip, stronger for rarer catches (anticipation cue). Lives and
+ * dies with CardBack's own mount cycle (unmounts once the flip crosses 90°). */
+function CardBackGlow({ rarity }: { rarity: Rarity }): React.JSX.Element {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const peak = CARD_BACK_GLOW_OPACITY[rarity];
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: FLOAT_CYCLE,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: FLOAT_CYCLE,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [peak * 0.45, peak],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFillObject, { backgroundColor: rarityColors[rarity], opacity }]}
+    />
+  );
+}
+
+/** Card back — shown while the reveal waits. Tinted by rarity as an
+ * anticipation cue (stronger tint = rarer catch), via CardBackGlow. */
+function CardBack({ rarity }: { rarity: Rarity }): React.JSX.Element {
   const t = useT(C);
+  const color = rarityColors[rarity];
   return (
     <View style={[styles.cardFace, styles.cardBack]}>
-      <View style={styles.cardBackEmblem}>
-        <Ionicons name="leaf-outline" size={36} color={colors.accent} />
+      <CardBackGlow rarity={rarity} />
+      <View style={[styles.cardBackEmblem, { borderColor: color }]}>
+        <Ionicons name="leaf-outline" size={36} color={color} />
       </View>
       <Text style={styles.cardBackLogo}>LifeDex</Text>
       <Text style={styles.cardBackSub}>{t('cardBackTagline')}</Text>
@@ -496,7 +629,7 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.
             { backfaceVisibility: 'hidden', transform: [{ rotateY: backRotate }] },
           ]}
         >
-          <CardBack />
+          <CardBack rarity={card.rarity} />
         </Animated.View>
       )}
 
@@ -701,6 +834,7 @@ const REVEAL_GROUPS = 6;
 
 export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
   const t = useT(C);
+  const flavorFor = useRarityFlavor();
   const { sightingId } = route.params;
 
   // Synchronous store lookup — no async, no pipeline.
@@ -714,6 +848,10 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
   // Rarity resolved before hooks so the flip-completion haptic can use it.
   const rarity: Rarity =
     collectionCard?.rarity ?? sighting?.rarity ?? 'common';
+
+  // First-ever catch of this species — drives the NEW SPECIES badge + a
+  // second confirming haptic beat on reveal.
+  const isFirstDiscovery = sighting?.isFirstDiscovery === true;
 
   // Animation phase — starts at 'flipping', transitions to 'revealed' after flip.
   const [phase, setPhase] = useState<Phase>('flipping');
@@ -732,8 +870,12 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
     } else {
       haptics.success();
     }
+    // First-ever catch of this species gets an extra confirming beat.
+    if (isFirstDiscovery) {
+      setTimeout(() => haptics.success(), 220);
+    }
     setPhase('revealed');
-  }, [rarity]);
+  }, [rarity, isFirstDiscovery]);
 
   // Stagger the content in only AFTER the flip lands.
   useEffect(() => {
@@ -803,7 +945,11 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
 
         {/* ---- Species name (revealed after the flip) ---- */}
         <Reveal anim={revealAnims[0]!}>
+          {isFirstDiscovery && <NewSpeciesBadge rarity={rarity} active={isRevealed} />}
           <Text style={styles.speciesName}>{sighting.commonName}</Text>
+          <Text style={[styles.rarityFlavor, { color: rarityColors[rarity] }]}>
+            {flavorFor(rarity)}
+          </Text>
         </Reveal>
         <Reveal anim={revealAnims[1]!}>
           {sighting.scientificName !== undefined ? (
@@ -1031,11 +1177,35 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH * 0.45,
   },
 
+  /* ---- New species badge ---- */
+  newBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  newBadgeText: {
+    ...typography.label,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+
   /* ---- Species header (below the card, post-reveal) ---- */
   speciesName: {
     ...typography.largeTitle,
     color: colors.textPrimary,
     textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  rarityFlavor: {
+    ...typography.callout,
+    textAlign: 'center',
+    fontWeight: '600',
     marginBottom: spacing.xs,
   },
   scientificName: {

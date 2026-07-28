@@ -152,11 +152,12 @@ const C = {
     sightingOther: '{n} sightings',
     sightingsHere: '{n} sightings here',
     sightingFallback: 'Sighting',
-    privacyBadge: '📍 GPS fuzzed · 🔒 Protected locations hidden',
+    privacyGpsFuzzed: 'GPS fuzzed',
+    privacyProtectedHidden: 'Protected locations hidden',
     exploreTitle: 'Explore the wild',
     exploreBody: 'Tap a pin or protected zone to see what was discovered there.',
-    protectedNotice: '🔒 Exact location protected — approximate area shown',
-    locationProtected: '🔒 Location protected',
+    protectedNotice: 'Exact location protected — approximate area shown',
+    locationProtected: 'Location protected',
     recenterA11y: 'Center on my location',
   },
   de: {
@@ -170,22 +171,23 @@ const C = {
     sightingOther: '{n} Sichtungen',
     sightingsHere: '{n} Sichtungen hier',
     sightingFallback: 'Sichtung',
-    privacyBadge: '📍 GPS verwischt · 🔒 Geschützte Orte verborgen',
+    privacyGpsFuzzed: 'GPS verwischt',
+    privacyProtectedHidden: 'Geschützte Orte verborgen',
     exploreTitle: 'Erkunde die Wildnis',
     exploreBody: 'Tippe auf einen Pin oder eine geschützte Zone, um zu sehen, was dort entdeckt wurde.',
-    protectedNotice: '🔒 Genauer Ort geschützt – ungefähre Fläche angezeigt',
-    locationProtected: '🔒 Ort geschützt',
+    protectedNotice: 'Genauer Ort geschützt – ungefähre Fläche angezeigt',
+    locationProtected: 'Ort geschützt',
     recenterA11y: 'Auf meinen Standort zentrieren',
   },
 } as const;
 
-const CATEGORY_ICONS: Record<CategoryFilter, string> = {
-  all: '🌍',
-  animal: '🦊',
-  plant: '🌿',
-  tree: '🌳',
-  mushroom: '🍄',
-  unknown: '❓',
+const CATEGORY_ICONS: Record<CategoryFilter, keyof typeof Ionicons.glyphMap> = {
+  all: 'earth-outline',
+  animal: 'paw-outline',
+  plant: 'flower-outline',
+  tree: 'leaf-outline',
+  mushroom: 'nutrition-outline',
+  unknown: 'help-outline',
 };
 
 /** Filters shown in the chip bar (excludes 'unknown' — not user-facing). */
@@ -312,7 +314,7 @@ function RarityBadge({ rarity, size = 'md' }: RarityBadgeProps) {
 
 interface ChipProps {
   label: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   active: boolean;
   onPress: () => void;
 }
@@ -320,13 +322,14 @@ function Chip({ label, icon, active, onPress }: ChipProps) {
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={10}
       style={({ pressed }) => [
         styles.chip,
         active && styles.chipActive,
         pressed && styles.chipPressed,
       ]}
     >
-      <Text style={styles.chipIcon}>{icon}</Text>
+      <Ionicons name={icon} size={14} color={active ? colors.teal : colors.textMuted} />
       <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -348,7 +351,7 @@ function Pin({ rarity, count, selected, onPress }: PinProps) {
       <View
         style={[
           styles.pin,
-          { backgroundColor: col, borderColor: selected ? '#fff' : col + 'aa' },
+          { backgroundColor: col, borderColor: selected ? colors.textPrimary : col + 'aa' },
         ]}
       >
         {count > 1 ? (
@@ -393,7 +396,11 @@ function FuzzCircle({ sighting, selected, onPress }: FuzzCircleProps) {
       >
         <View style={styles.fuzzTapTarget}>
           <View style={[styles.fuzzCentrePin, { backgroundColor: col }]}>
-            <Text style={styles.fuzzCentrePinIcon}>{hidden ? '🔒' : '◎'}</Text>
+            <Ionicons
+              name={hidden ? 'lock-closed' : 'ellipse-outline'}
+              size={14}
+              color={colors.textPrimary}
+            />
           </View>
         </View>
       </Marker>
@@ -410,14 +417,14 @@ interface SightingRowProps {
 function SightingRow({ sighting, onPress }: SightingRowProps) {
   const t = useT(C);
   const col = rarityColors[sighting.rarity];
-  const catIcon = CATEGORY_ICONS[sighting.category] ?? '?';
+  const catIcon = CATEGORY_ICONS[sighting.category] ?? 'help-outline';
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.sightingRow}>
       <View style={[styles.sightingStrip, { backgroundColor: col }]} />
 
       <View style={[styles.sightingIconBg, { backgroundColor: col + '22' }]}>
-        <Text style={styles.sightingIcon}>{catIcon}</Text>
+        <Ionicons name={catIcon} size={20} color={col} />
       </View>
 
       <View style={styles.sightingInfo}>
@@ -433,7 +440,10 @@ function SightingRow({ sighting, onPress }: SightingRowProps) {
           <RarityBadge rarity={sighting.rarity} size="sm" />
           <Text style={styles.sightingXp}>+{sighting.xp} XP</Text>
           {sighting.publicLocation.hidden && (
-            <Text style={styles.sightingProtected}>{t('locationProtected')}</Text>
+            <View style={styles.protectedInline}>
+              <Ionicons name="lock-closed-outline" size={10} color={colors.amber} />
+              <Text style={styles.sightingProtected}>{t('locationProtected')}</Text>
+            </View>
           )}
         </View>
       </View>
@@ -758,10 +768,18 @@ export default function MapScreen({ navigation }: Props) {
                 : t('sightingOther', { n: totalShown })}
             </Text>
             {hiddenCount > 0 && (
-              <Text style={styles.statsHidden}> · {hiddenCount} 🔒</Text>
+              <View style={styles.statsExtra}>
+                <Text style={styles.statsDivider}>·</Text>
+                <Ionicons name="lock-closed" size={11} color={colors.amber} />
+                <Text style={styles.statsHidden}>{hiddenCount}</Text>
+              </View>
             )}
             {community.length > 0 && (
-              <Text style={styles.statsHidden}> · 🌍 {community.length}</Text>
+              <View style={styles.statsExtra}>
+                <Text style={styles.statsDivider}>·</Text>
+                <Ionicons name="earth" size={11} color={colors.textSecondary} />
+                <Text style={styles.statsHidden}>{community.length}</Text>
+              </View>
             )}
           </View>
         </View>
@@ -787,7 +805,15 @@ export default function MapScreen({ navigation }: Props) {
 
       {/* ── Privacy badge (bottom-left) ───────────────────────── */}
       <View style={styles.privacyBadge} pointerEvents="none">
-        <Text style={styles.privacyText}>{t('privacyBadge')}</Text>
+        <View style={styles.privacyRow}>
+          <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+          <Text style={styles.privacyText}>{t('privacyGpsFuzzed')}</Text>
+        </View>
+        <Text style={styles.privacyDivider}>·</Text>
+        <View style={styles.privacyRow}>
+          <Ionicons name="lock-closed-outline" size={11} color={colors.textMuted} />
+          <Text style={styles.privacyText}>{t('privacyProtectedHidden')}</Text>
+        </View>
       </View>
 
       {/* ── Recenter FAB (native map only, bottom-right) ────────── */}
@@ -808,6 +834,7 @@ export default function MapScreen({ navigation }: Props) {
         {/* Drag handle */}
         <Pressable
           onPress={sheetExpanded ? closeSheet : undefined}
+          hitSlop={{ top: 12, bottom: 12 }}
           style={styles.sheetHandle}
         >
           <View style={styles.sheetHandleBar} />
@@ -816,7 +843,7 @@ export default function MapScreen({ navigation }: Props) {
         {sheetSightings.length === 0 ? (
           /* Empty / idle state */
           <View style={styles.sheetEmpty}>
-            <Text style={styles.sheetEmptyIcon}>🌿</Text>
+            <Ionicons name="leaf-outline" size={40} color={colors.moss} style={styles.sheetEmptyIcon} />
             <Text style={styles.sheetEmptyTitle}>{t('exploreTitle')}</Text>
             <Text style={styles.sheetEmptyBody}>{t('exploreBody')}</Text>
           </View>
@@ -829,7 +856,7 @@ export default function MapScreen({ navigation }: Props) {
                   ? (sheetSightings[0]?.commonName ?? t('sightingFallback'))
                   : t('sightingsHere', { n: sheetSightings.length })}
               </Text>
-              <TouchableOpacity onPress={closeSheet} style={styles.sheetClose}>
+              <TouchableOpacity onPress={closeSheet} style={styles.sheetClose} hitSlop={8}>
                 <Text style={styles.sheetCloseIcon}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -837,6 +864,7 @@ export default function MapScreen({ navigation }: Props) {
             {/* Protected-species notice */}
             {selectedHiddenSighting != null && (
               <View style={styles.protectedNotice}>
+                <Ionicons name="lock-closed-outline" size={13} color={colors.amber} />
                 <Text style={styles.protectedNoticeText}>{t('protectedNotice')}</Text>
               </View>
             )}
@@ -848,9 +876,10 @@ export default function MapScreen({ navigation }: Props) {
               return (
                 <View style={styles.safetyNotice}>
                   {notes.map((note, i) => (
-                    <Text key={i} style={styles.safetyNoticeText}>
-                      ⚠️ {note}
-                    </Text>
+                    <View key={i} style={styles.safetyNoticeRow}>
+                      <Ionicons name="warning-outline" size={12} color={colors.danger} />
+                      <Text style={styles.safetyNoticeText}>{note}</Text>
+                    </View>
                   ))}
                 </View>
               );
@@ -919,6 +948,16 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
+  statsExtra: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 4,
+  },
+  statsDivider: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
   statsHidden: {
     ...typography.caption,
     color: colors.amber,
@@ -948,9 +987,6 @@ const styles = StyleSheet.create({
   chipPressed: {
     opacity: 0.7,
   },
-  chipIcon: {
-    fontSize: 14,
-  },
   chipLabel: {
     ...typography.label,
     color: colors.textMuted,
@@ -964,12 +1000,25 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: SHEET_PEEK + 12,
     left: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.surface + 'cc',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  privacyDivider: {
+    ...typography.label,
+    color: colors.textMuted,
+    fontSize: 10,
   },
   privacyText: {
     ...typography.label,
@@ -1025,12 +1074,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#ffffff88',
+    backgroundColor: colors.textPrimary + '88',
   },
   pinCount: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#fff',
+    color: colors.textPrimary,
   },
   pinTail: {
     width: 0,
@@ -1057,9 +1106,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.88,
-  },
-  fuzzCentrePinIcon: {
-    fontSize: 14,
   },
 
   // Rarity badge
@@ -1137,6 +1183,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   protectedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
     padding: spacing.sm,
@@ -1148,6 +1197,7 @@ const styles = StyleSheet.create({
   protectedNoticeText: {
     ...typography.caption,
     color: colors.amber,
+    flexShrink: 1,
   },
   safetyNotice: {
     marginHorizontal: spacing.md,
@@ -1159,9 +1209,15 @@ const styles = StyleSheet.create({
     borderColor: colors.danger + '44',
     gap: 3,
   },
+  safetyNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
   safetyNoticeText: {
     ...typography.caption,
     color: colors.danger,
+    flexShrink: 1,
   },
   sheetList: {
     paddingBottom: spacing.xxl,
@@ -1174,7 +1230,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   sheetEmptyIcon: {
-    fontSize: 40,
     marginBottom: spacing.sm,
   },
   sheetEmptyTitle: {
@@ -1211,9 +1266,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.sm,
   },
-  sightingIcon: {
-    fontSize: 22,
-  },
   sightingInfo: {
     flex: 1,
     gap: 3,
@@ -1237,6 +1289,11 @@ const styles = StyleSheet.create({
   sightingXp: {
     ...typography.label,
     color: colors.teal,
+  },
+  protectedInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   sightingProtected: {
     ...typography.label,
