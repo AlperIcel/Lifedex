@@ -14,8 +14,9 @@
 
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, type Theme } from '@react-navigation/native';
 import { colors } from './src/theme/theme';
@@ -49,6 +50,15 @@ export default function App(): React.JSX.Element {
     // Best-effort anonymous sign-in for the community layer (no-op if disabled).
     void ensureAnonSession();
     void isOnboarded().then(setOnboardedState);
+
+    // Immersive full-screen on Android: hide the system navigation bar (the
+    // Samsung gesture/3-button bar) so it doesn't overlay the app chrome.
+    // 'overlay-swipe' lets a swipe from the edge reveal it briefly, then it
+    // auto-hides again. No-op on iOS.
+    if (Platform.OS === 'android') {
+      void NavigationBar.setVisibilityAsync('hidden');
+      void NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
   }, []);
 
   return (

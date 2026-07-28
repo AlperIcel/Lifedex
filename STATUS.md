@@ -49,7 +49,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Settings / privacy / export / delete | ✅ |
 | Maps | ⚠️ stylised MockMapView; native gated behind an (unset) key + dev build |
 | Real accounts | ❌ anonymous-only (device = identity) |
-| Recognition ENGINE quality | ✅ REAL species-accurate adapter built (iNaturalist CV + PlantNet, key-ready, mock/Google fallback); needs owner API token to activate |
+| Recognition ENGINE quality | ✅ REAL + LIVE-VERIFIED on device (iNaturalist CV token active; caught "Nephrolepis exaltata" correctly). PlantNet flora refiner optional. |
 | Server-side score validation (anti-XP-spoof) | ❌ XP computed client-side |
 | EAS build / store / push / monetization | ❌ not built |
 | GDPR deletion/export | ⚠️ local + community rows done; Storage files + full flow partial |
@@ -59,6 +59,15 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Recognition live-verified** on a real Android device via Expo Go (iNaturalist
+  token in `.env` → `expo.extra`; correctly IDed a Boston fern with real XP/rarity).
+- **Immersive Android UI:** hide the system navigation bar (`expo-navigation-bar`,
+  `overlay-swipe`) in `App.tsx` so the Samsung gesture bar doesn't overlay chrome.
+- **Supabase left OFF by default:** the community layer's background auth refresh
+  surfaced a dev-only "Network request failed" overlay when Supabase creds were
+  invalid/unreachable. Community is optional; `.env` Supabase vars are commented
+  out (app runs fully local). Re-enable with a real anon key + the SQL in
+  `docs/OWNER_SETUP.md` when the shared feed/map/leaderboard is wanted.
 - **SDK 51 → 54 upgrade** (RN 0.74→0.81, React 18→19) so the current Expo Go can
   run the app. Fixes: `expo-file-system` v19 API moved → import from
   `expo-file-system/legacy` in `visionClient.ts`; reinstalled pruned deps
