@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 501 passing
+npm test                 # jest — currently 551 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -61,6 +61,16 @@ but ~35–40% of a shippable v1. The hardest, product-defining parts (accurate I
 real accounts, scale moderation) remain.
 
 ## Recently done (highlights)
+- **Overnight game-feel + retention wave (2026-07-29, studio plan + audit).** On
+  top of the rarity economy below: quick-wins (NEW-species badge, tier reveal
+  copy, rarity card-back glow, Home streak flame, map Ionicons, 44pt targets);
+  **The Juice** (visible level-up takeover + escalated epic/legendary reveal with
+  sunburst/particles/stamp); **sound system** (expo-audio, silent placeholder
+  WAVs, real Settings toggle); **daily loop** (`src/domain/dailyQuests.ts`, Home
+  Today card, claimable reward); **wonder-first onboarding** (example card, not 9
+  rules); **Living-Dex** collection (category sections + silhouette gaps,
+  `src/domain/dexGrouping.ts`; fixed a latent >100% completion bug). Plus two
+  verified audit bugs (map→CardDetail id; `isFirstDiscovery` made real). All green.
 - **Scalable, context-honest rarity economy (2026-07-28, studio-review priority #1).**
   Rarity was context-free: only the ~48 curated species in `speciesRules.ts` had a
   real `baseRarity`; everything else — ~99 % of what iNat actually recognises —
