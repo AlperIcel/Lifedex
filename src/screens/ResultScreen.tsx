@@ -52,6 +52,7 @@ import { MockCardImage } from '@/components/MockCardImage';
 import { RarityBadge } from '@/components/RarityBadge';
 import { lifeDexStore, useLifeDexStore } from '@/store/useLifeDexStore';
 import { haptics } from '@/utils/haptics';
+import { sound } from '@/utils/sound';
 import {
   colors,
   elevation,
@@ -1161,7 +1162,10 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
 
   useEffect(() => {
     if (!isRevealed || pendingLevel === null) return;
-    const t = setTimeout(() => setLevelUpVisible(true), LEVEL_UP_REVEAL_DELAY);
+    const t = setTimeout(() => {
+      sound.levelUp();
+      setLevelUpVisible(true);
+    }, LEVEL_UP_REVEAL_DELAY);
     return () => clearTimeout(t);
   }, [isRevealed, pendingLevel]);
 
@@ -1170,6 +1174,8 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
   }, []);
 
   const handleFlipComplete = useCallback(() => {
+    // Sound in sync with the haptic beat below — base whoosh + rarity stinger.
+    sound.reveal(rarity);
     // Heavier beat for the top tiers; standard success otherwise.
     if (rarity === 'epic' || rarity === 'legendary') {
       haptics.rare();

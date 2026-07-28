@@ -44,6 +44,7 @@ import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { Button, Chip } from '@/components';
 import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
 import { haptics } from '@/utils/haptics';
+import { sound } from '@/utils/sound';
 import { useT } from '@/i18n';
 
 /* ------------------------------------------------------------------ */
@@ -457,6 +458,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
 
     // Shutter animation
     haptics.shutter();
+    sound.shutter();
     Animated.sequence([
       Animated.timing(shutterScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
       Animated.timing(shutterScale, { toValue: 1, duration: 80, useNativeDriver: true }),

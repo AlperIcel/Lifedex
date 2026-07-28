@@ -4,7 +4,7 @@
  * Modal screen opened from the Home gear icon. Sections:
  *   - Profile              read-only explorer name/level/XP; rename is "coming soon"
  *   - Language              switch the app's display language (EN/DE)
- *   - Gameplay              distance units (real), haptics (real), sound (coming soon)
+ *   - Gameplay              distance units (real), haptics (real), sound (real)
  *   - Notifications         placeholder only — no backend, clearly marked
  *   - Privacy & data        data export, delete-all (pre-existing, unchanged behaviour)
  *   - Info                  how it works (discovery rules), app version, credits/attribution
@@ -27,6 +27,7 @@ import { lifeDexStore, useLifeDexStore } from '@/store/useLifeDexStore';
 import { loadUserCaptures, clearUserCaptures } from '@/store/persistence';
 import { settingsStore, useSettings, type DistanceUnits } from '@/store/settings';
 import { haptics } from '@/utils/haptics';
+import { sound } from '@/utils/sound';
 import { supabase } from '@/lib/supabase';
 import type { RootStackParamList } from '@/navigation/types';
 import { useT, useLang, setLang, LANGS, LANG_LABEL } from '@/i18n';
@@ -48,7 +49,7 @@ const C = {
     haptics: 'Haptics',
     hapticsSub: 'Buzz on captures, taps and rewards',
     soundMusic: 'Sound & music',
-    soundMusicSub: 'No audio yet — silent by design',
+    soundMusicSub: 'Chimes on captures, reveals and rewards',
     notifications: 'Notifications',
     dailyReminder: 'Daily reminder',
     dailyReminderSub: 'A nudge to keep your streak alive',
@@ -89,7 +90,7 @@ const C = {
     haptics: 'Haptik',
     hapticsSub: 'Vibriert bei Fängen, Taps und Belohnungen',
     soundMusic: 'Sound & Musik',
-    soundMusicSub: 'Noch kein Ton — bewusst stumm',
+    soundMusicSub: 'Klänge bei Fängen, Enthüllungen und Belohnungen',
     notifications: 'Benachrichtigungen',
     dailyReminder: 'Tägliche Erinnerung',
     dailyReminderSub: 'Ein Anstoß, damit deine Serie nicht abreißt',
@@ -288,6 +289,15 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
     if (value) haptics.tap();
   };
 
+  const handleSoundToggle = (value: boolean): void => {
+    settingsStore.setSoundEnabled(value);
+    // Mirrors handleHapticsToggle: prove the toggle works the moment it's
+    // turned on. Silent today (placeholder SFX, see assets/sounds/README.md)
+    // the same way haptics would be silent on hardware without a vibration
+    // motor — the wiring is real either way.
+    if (value) sound.uiTap();
+  };
+
   const appVersion = Constants.expoConfig?.version ?? '0.1.0';
 
   const avatarInitial = (profile.username.charAt(0) || '?').toUpperCase();
@@ -382,11 +392,18 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <View style={styles.sep} />
         <SettingsRow
           icon="musical-notes-outline"
-          iconColor={colors.textTertiary}
           label={t('soundMusic')}
           subtitle={t('soundMusicSub')}
-          right={<SoonBadge />}
-          disabled
+          right={
+            <Switch
+              value={settings.soundEnabled}
+              onValueChange={handleSoundToggle}
+              trackColor={{ false: colors.surfaceHigh, true: colors.accent }}
+              thumbColor={colors.textPrimary}
+              ios_backgroundColor={colors.surfaceHigh}
+              accessibilityLabel={t('soundMusic')}
+            />
+          }
         />
       </View>
 
