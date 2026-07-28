@@ -15,6 +15,7 @@
  */
 import {
   lifeDexStore,
+  levelBounds,
   selectRecentDiscoveries,
   selectTodayCount,
   selectTotalSpecies,
@@ -244,6 +245,56 @@ describe('XP and level', () => {
     const l0 = lifeDexStore.getSnapshot().profile.level;
     lifeDexStore.addSighting(makeSighting({ id: 'xp-level', xp: 10000 }));
     expect(lifeDexStore.getSnapshot().profile.level).toBeGreaterThanOrEqual(l0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Level-up detection (pendingLevelUp / consumeLevelUp)                */
+/* ------------------------------------------------------------------ */
+
+describe('level-up detection', () => {
+  it('sets pendingLevelUp when a capture crosses a level boundary, and consumeLevelUp reads-and-clears it exactly once', () => {
+    const before = lifeDexStore.getSnapshot().profile;
+    lifeDexStore.addSighting(makeSighting({ id: 'level-up-1', xp: 100_000 }));
+    const after = lifeDexStore.getSnapshot().profile;
+
+    expect(after.level).toBeGreaterThan(before.level);
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).toBe(after.level);
+    expect(lifeDexStore.consumeLevelUp()).toBe(after.level);
+    // Cleared after the first read — a second consume sees nothing pending.
+    expect(lifeDexStore.consumeLevelUp()).toBeNull();
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).toBeNull();
+  });
+
+  it('does not set pendingLevelUp when a capture does not cross a level boundary', () => {
+    const before = lifeDexStore.getSnapshot().profile;
+    // toNext - 1 is always a safe amount of XP that cannot cross the ceiling.
+    const safeXp = Math.max(0, levelBounds(before.xp).toNext - 1);
+    lifeDexStore.addSighting(makeSighting({ id: 'no-level-up', xp: safeXp }));
+
+    expect(lifeDexStore.getSnapshot().profile.level).toBe(before.level);
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).toBeNull();
+    expect(lifeDexStore.consumeLevelUp()).toBeNull();
+  });
+
+  it('consumeLevelUp returns null when nothing is pending', () => {
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).toBeNull();
+    expect(lifeDexStore.consumeLevelUp()).toBeNull();
+  });
+
+  it('reset() clears any pending level-up', () => {
+    lifeDexStore.addSighting(makeSighting({ id: 'level-up-reset', xp: 100_000 }));
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).not.toBeNull();
+    lifeDexStore.reset();
+    expect(lifeDexStore.getSnapshot().pendingLevelUp).toBeNull();
+  });
+
+  it('idempotent addSighting (duplicate id) does not re-flag a level-up', () => {
+    const s = makeSighting({ id: 'level-up-dup', xp: 100_000 });
+    lifeDexStore.addSighting(s);
+    lifeDexStore.consumeLevelUp(); // clear it
+    lifeDexStore.addSighting(s); // same id again — no-op per idempotency rules
+    expect(lifeDexStore.consumeLevelUp()).toBeNull();
   });
 });
 

@@ -87,6 +87,16 @@ export interface LifeDexState {
   pipeline: PipelineState;
   loading: boolean;
   error: string | null;
+  /**
+   * Set to the new level number the instant a LIVE capture (addSighting)
+   * crosses one or more level boundaries; null otherwise. Transient hand-off
+   * to the UI (ResultScreen's level-up takeover) — read it via
+   * `consumeLevelUp()`, which returns it and clears it in one step so the
+   * celebration fires exactly once per level-up. Never set by hydrate()'s
+   * replay of persisted captures on app start (that would replay stale
+   * level-ups as if they just happened).
+   */
+  pendingLevelUp: number | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -259,6 +269,7 @@ function createInitialState(): LifeDexState {
     pipeline: { phase: 'idle' },
     loading: false,
     error: null,
+    pendingLevelUp: null,
   };
 }
 
@@ -334,7 +345,18 @@ class LifeDexStore {
     }
 
     const collectionCard = card ?? cardFromSighting(sighting);
+    const levelBefore = this.state.profile.level;
     this.applyCapture(sighting, collectionCard);
+    const levelAfter = this.state.profile.level;
+
+    // Live level-up: flag it for the UI. Deliberately NOT done inside
+    // applyCapture() itself, since that helper is shared with hydrate()'s
+    // replay of persisted captures on app start — replaying history must
+    // never look like a level-up that "just happened".
+    if (levelAfter > levelBefore) {
+      this.state = { ...this.state, pendingLevelUp: levelAfter };
+    }
+
     this.emit();
 
     // Track + persist (newest first). Fire-and-forget; flush() awaits it.
@@ -342,6 +364,18 @@ class LifeDexStore {
     this.persistPromise = saveUserCaptures(this.userCaptures);
 
     return { sightingId: sighting.id, cardId: collectionCard.id };
+  }
+
+  /**
+   * Read-and-clear the pending level-up flag. Returns the new level reached
+   * since the last consume, or null if none is pending. Call once (e.g. on
+   * ResultScreen mount) so the level-up takeover shows exactly once.
+   */
+  consumeLevelUp(): number | null {
+    const level = this.state.pendingLevelUp;
+    if (level === null) return null;
+    this.setState({ ...this.state, pendingLevelUp: null });
+    return level;
   }
 
   /**
@@ -462,6 +496,7 @@ export interface UseLifeDexStore extends LifeDexState {
   setLoading: (b: boolean) => void;
   setError: (e: string | null) => void;
   reset: () => void;
+  consumeLevelUp: () => number | null;
 }
 
 /**
@@ -488,5 +523,6 @@ export function useLifeDexStore(): UseLifeDexStore {
     setLoading: (b) => lifeDexStore.setLoading(b),
     setError: (e) => lifeDexStore.setError(e),
     reset: () => lifeDexStore.reset(),
+    consumeLevelUp: () => lifeDexStore.consumeLevelUp(),
   };
 }

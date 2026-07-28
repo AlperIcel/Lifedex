@@ -47,9 +47,10 @@ import type { CardMetadata, Sighting } from '@/domain/types';
 import { env } from '@/config/env';
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
+import { LevelUpOverlay } from '@/components/LevelUpOverlay';
 import { MockCardImage } from '@/components/MockCardImage';
 import { RarityBadge } from '@/components/RarityBadge';
-import { useLifeDexStore } from '@/store/useLifeDexStore';
+import { lifeDexStore, useLifeDexStore } from '@/store/useLifeDexStore';
 import { haptics } from '@/utils/haptics';
 import {
   colors,
@@ -166,6 +167,50 @@ const CARD_BACK_GLOW_OPACITY: Record<Rarity, number> = {
   epic: 0.42,
   legendary: 0.62,
 };
+
+/** Flip-in duration per rarity — epic/legendary get a slower, weightier flip
+ * (common/uncommon/rare keep the plain baseline). */
+const FLIP_DURATION_BY_RARITY: Record<Rarity, number> = {
+  common: FLIP_DURATION,
+  uncommon: FLIP_DURATION,
+  rare: FLIP_DURATION,
+  epic: FLIP_DURATION + 200,
+  legendary: FLIP_DURATION + 380,
+};
+
+/** Pre-flip anticipation hold (ms) — rarer catches linger a beat longer on
+ * the glowing card back before flipping. */
+const FLIP_HOLD_BY_RARITY: Record<Rarity, number> = {
+  common: 900,
+  uncommon: 900,
+  rare: 900,
+  epic: 1050,
+  legendary: 1250,
+};
+
+/** Sunburst full rotation period (ms) per rarity — only epic/legendary render
+ * it; legendary spins a little livelier. */
+const SUNBURST_ROTATION_MS: Record<Rarity, number> = {
+  common: 14000,
+  uncommon: 14000,
+  rare: 14000,
+  epic: 13000,
+  legendary: 9000,
+};
+
+/** Rising-sparkle particle count behind the card — 0 for common/uncommon/rare
+ * (kept plain), moderate for epic/legendary (perf-conscious escalation). */
+const PARTICLE_COUNT: Record<Rarity, number> = {
+  common: 0,
+  uncommon: 0,
+  rare: 0,
+  epic: 5,
+  legendary: 8,
+};
+
+/** Bounding box for the rotating sunburst rays — bigger than the card so the
+ * beams read as radiating outward past its edges. */
+const SUNBURST_SIZE = CARD_HEIGHT + 160;
 
 /** Delay between staggered reveal items (ms). */
 const STAGGER_DELAY = 90;
@@ -397,11 +442,194 @@ function RarityGlow({
 }
 
 /* ------------------------------------------------------------------ */
+/* Rarity sunburst — rotating light rays for epic/legendary reveals    */
+/* ------------------------------------------------------------------ */
+
+/** Two counter-rotating "+" crosses (4 thin bars total) sharing one driver
+ * value — cheap (no SVG, 4 plain Views) but reads as an 8-spoke sunburst
+ * since the layers sweep past each other in opposite directions. Epic/
+ * legendary only; common/uncommon/rare render nothing. */
+function RaritySunburst({
+  rarity,
+  visible,
+}: {
+  rarity: Rarity;
+  visible: boolean;
+}): React.JSX.Element | null {
+  const isHighTier = rarity === 'epic' || rarity === 'legendary';
+  const rotation = useRef(new Animated.Value(0)).current;
+  const breathe = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible || !isHighTier) return;
+
+    const spin = Animated.loop(
+      Animated.timing(rotation, {
+        toValue: 1,
+        duration: SUNBURST_ROTATION_MS[rarity],
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    spin.start();
+
+    const flicker = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breathe, {
+          toValue: 1,
+          duration: motion.duration.slow * 2,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+        Animated.timing(breathe, {
+          toValue: 0.45,
+          duration: motion.duration.slow * 2,
+          easing: motion.easing.standard,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    flicker.start();
+
+    return () => {
+      spin.stop();
+      flicker.stop();
+    };
+  }, [visible, isHighTier, rarity, rotation, breathe]);
+
+  if (!isHighTier) return null;
+
+  const spin = rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  // Same speed, opposite direction, phase-shifted 45° — interleaves into 8 spokes.
+  const spinCounter = rotation.interpolate({ inputRange: [0, 1], outputRange: ['405deg', '45deg'] });
+  const color = rarityColors[rarity];
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.sunburstWrap, { opacity: breathe }]}>
+      <Animated.View style={[styles.sunburstLayer, { transform: [{ rotate: spin }] }]}>
+        <View style={[styles.sunburstBarH, { backgroundColor: color }]} />
+        <View style={[styles.sunburstBarV, { backgroundColor: color }]} />
+      </Animated.View>
+      <Animated.View style={[styles.sunburstLayer, { transform: [{ rotate: spinCounter }] }]}>
+        <View style={[styles.sunburstBarH, { backgroundColor: color }]} />
+        <View style={[styles.sunburstBarV, { backgroundColor: color }]} />
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Rarity particles — rising sparkles for epic/legendary reveals       */
+/* ------------------------------------------------------------------ */
+
+interface ParticleSpec {
+  left: number;
+  delay: number;
+  duration: number;
+  scale: number;
+}
+
+/** Deterministic pseudo-scatter (no Math.random()) so each particle gets a
+ * slightly different position/timing/size without making the reveal
+ * non-reproducible. */
+function buildParticleSpecs(count: number): ParticleSpec[] {
+  return Array.from({ length: count }, (_, i) => ({
+    left: 12 + ((i * 67) % 100) * ((CARD_WIDTH - 24) / 100),
+    delay: (i * 231) % 900,
+    duration: 1800 + ((i * 149) % 700),
+    scale: 0.7 + ((i * 37) % 100) / 200,
+  }));
+}
+
+/** One rising sparkle: fades in low, drifts up past the top of the card,
+ * fades out, then loops. */
+function RarityParticle({
+  spec,
+  color,
+  active,
+}: {
+  spec: ParticleSpec;
+  color: string;
+  active: boolean;
+}): React.JSX.Element {
+  const rise = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!active) return;
+    const loop = Animated.loop(
+      Animated.timing(rise, {
+        toValue: 1,
+        duration: spec.duration,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    );
+    const t = setTimeout(() => loop.start(), spec.delay);
+    return () => {
+      clearTimeout(t);
+      loop.stop();
+    };
+  }, [active, rise, spec.delay, spec.duration]);
+
+  const translateY = rise.interpolate({
+    inputRange: [0, 1],
+    outputRange: [40, -CARD_HEIGHT - 40],
+  });
+  const opacity = rise.interpolate({
+    inputRange: [0, 0.15, 0.8, 1],
+    outputRange: [0, 1, 1, 0],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.particle,
+        {
+          left: spec.left,
+          backgroundColor: color,
+          opacity,
+          transform: [{ translateY }, { scale: spec.scale }],
+        },
+      ]}
+    />
+  );
+}
+
+/** Field of rising sparkles behind/in front of the card — moderate count,
+ * epic/legendary only (common/uncommon/rare render nothing). */
+function RarityParticles({
+  rarity,
+  visible,
+}: {
+  rarity: Rarity;
+  visible: boolean;
+}): React.JSX.Element | null {
+  const count = PARTICLE_COUNT[rarity];
+  const specs = useRef(buildParticleSpecs(count)).current;
+
+  if (count === 0) return null;
+
+  const color = rarityColors[rarity];
+
+  return (
+    <View pointerEvents="none" style={styles.particleField}>
+      {specs.map((spec, i) => (
+        <RarityParticle key={i} spec={spec} color={color} active={visible} />
+      ))}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Card shimmer — diagonal gradient sweep across the revealed face     */
 /* ------------------------------------------------------------------ */
 
-/** Diagonal light sweep that crosses the card face once after the flip. */
-function CardShimmer({ active }: { active: boolean }): React.JSX.Element {
+/** Diagonal light sweep that crosses the card face once after the flip. The
+ * post-flip pause before it sweeps is keyed to the SAME per-rarity flip
+ * duration as FlipCard, so epic/legendary's slower flip keeps the shimmer
+ * proportionally in sync rather than firing early. */
+function CardShimmer({ active, rarity }: { active: boolean; rarity: Rarity }): React.JSX.Element {
   const sweep = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -413,9 +641,9 @@ function CardShimmer({ active }: { active: boolean }): React.JSX.Element {
         easing: motion.easing.decel,
         useNativeDriver: true,
       }).start();
-    }, FLIP_DURATION + 100);
+    }, FLIP_DURATION_BY_RARITY[rarity] + 100);
     return () => clearTimeout(delay);
-  }, [active, sweep]);
+  }, [active, sweep, rarity]);
 
   const translateX = sweep.interpolate({
     inputRange: [0, 1],
@@ -441,6 +669,54 @@ function CardShimmer({ active }: { active: boolean }): React.JSX.Element {
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Rarity stamp — foil-style badge stamped on epic/legendary card faces */
+/* ------------------------------------------------------------------ */
+
+/** Small rotated foil-style badge that pops onto the card face right after
+ * the flip — epic/legendary only. common/uncommon/rare stay plain. */
+function RarityStamp({ rarity }: { rarity: Rarity }): React.JSX.Element | null {
+  const common = useCommon();
+  const isHighTier = rarity === 'epic' || rarity === 'legendary';
+  const pop = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isHighTier) return;
+    const t = setTimeout(() => {
+      Animated.timing(pop, {
+        toValue: 1,
+        duration: motion.duration.slow,
+        easing: motion.easing.overshoot,
+        useNativeDriver: true,
+      }).start();
+    }, 120);
+    return () => clearTimeout(t);
+  }, [isHighTier, pop]);
+
+  if (!isHighTier) return null;
+
+  const color = rarityColors[rarity];
+  const scale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.stampWrap,
+        {
+          borderColor: color,
+          backgroundColor: rarityTints[rarity],
+          opacity: pop,
+          transform: [{ rotate: '-7deg' }, { scale }],
+        },
+      ]}
+    >
+      <Ionicons name="flash" size={12} color={color} />
+      <Text style={[styles.stampText, { color }]}>{common.rarity(rarity).toUpperCase()}</Text>
     </Animated.View>
   );
 }
@@ -475,6 +751,8 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
         <View style={[styles.cardImageGlow, { backgroundColor: rarityTints[card.rarity] }]} />
       </View>
 
+      {flipped && <RarityStamp rarity={card.rarity} />}
+
       {/* Card info panel */}
       <View style={styles.cardInfo}>
         {/* Header row: name + rarity badge */}
@@ -508,7 +786,7 @@ function CardFace({ card, imageUri, flipped }: CardFaceProps): React.JSX.Element
         </View>
       </View>
 
-      {flipped && <CardShimmer active />}
+      {flipped && <CardShimmer active rarity={card.rarity} />}
     </View>
   );
 }
@@ -587,19 +865,20 @@ function FlipCard({ card, imageUri, onFlipComplete }: FlipCardProps): React.JSX.
   const [showFront, setShowFront] = useState(false);
 
   useEffect(() => {
-    // Hold on the floating card back for a beat before the flip.
+    // Hold on the floating card back for a beat before the flip — epic/
+    // legendary linger longer (more suspense) and then flip slower/heavier.
     const t = setTimeout(() => {
       Animated.timing(flipAnim, {
         toValue: 180,
-        duration: FLIP_DURATION,
+        duration: FLIP_DURATION_BY_RARITY[card.rarity],
         easing: motion.easing.overshoot,
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) onFlipComplete();
       });
-    }, 900);
+    }, FLIP_HOLD_BY_RARITY[card.rarity]);
     return () => clearTimeout(t);
-  }, [flipAnim, onFlipComplete]);
+  }, [flipAnim, onFlipComplete, card.rarity]);
 
   // At 90° the card passes through the "invisible" point — we swap sides then.
   useEffect(() => {
@@ -832,6 +1111,11 @@ type Phase = 'flipping' | 'revealed';
 /** Number of staggered reveal groups below the card. */
 const REVEAL_GROUPS = 6;
 
+/** Beat after the reveal settles (stagger + XP count-up) before the
+ * level-up takeover hijacks the screen — a deliberate second climax, not a
+ * competing animation. */
+const LEVEL_UP_REVEAL_DELAY = XP_COUNT_DURATION + 300;
+
 export default function ResultScreen({ route, navigation }: Props): React.JSX.Element {
   const t = useT(C);
   const flavorFor = useRarityFlavor();
@@ -862,6 +1146,28 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
   const revealAnims = useRef(
     Array.from({ length: REVEAL_GROUPS }, () => new Animated.Value(0)),
   ).current;
+
+  // Level-up takeover: read-and-clear the store's pending flag ONCE on mount
+  // (direct singleton call, not the reactive hook — this is a one-shot queue
+  // pop, not something that should re-run on every render). Shown only after
+  // the card reveal has fully settled (see the delayed effect below).
+  const [pendingLevel, setPendingLevel] = useState<number | null>(null);
+  const [levelUpVisible, setLevelUpVisible] = useState(false);
+
+  useEffect(() => {
+    const level = lifeDexStore.consumeLevelUp();
+    if (level !== null) setPendingLevel(level);
+  }, []);
+
+  useEffect(() => {
+    if (!isRevealed || pendingLevel === null) return;
+    const t = setTimeout(() => setLevelUpVisible(true), LEVEL_UP_REVEAL_DELAY);
+    return () => clearTimeout(t);
+  }, [isRevealed, pendingLevel]);
+
+  const handleDismissLevelUp = useCallback(() => {
+    setLevelUpVisible(false);
+  }, []);
 
   const handleFlipComplete = useCallback(() => {
     // Heavier beat for the top tiers; standard success otherwise.
@@ -933,6 +1239,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
       >
         {/* ---- The card — the star of the screen ---- */}
         <View style={styles.cardWrapper}>
+          <RaritySunburst rarity={rarity} visible={isRevealed} />
           <RarityGlow rarity={rarity} visible={isRevealed} />
           <IdleFloat settled={isRevealed}>
             <FlipCard
@@ -941,6 +1248,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
               onFlipComplete={handleFlipComplete}
             />
           </IdleFloat>
+          <RarityParticles rarity={rarity} visible={isRevealed} />
         </View>
 
         {/* ---- Species name (revealed after the flip) ---- */}
@@ -1014,6 +1322,11 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
         {/* Bottom padding */}
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+
+      {/* ---- Level-up takeover — grand finale, only after the reveal settles ---- */}
+      {levelUpVisible && pendingLevel !== null && (
+        <LevelUpOverlay level={pendingLevel} onDismiss={handleDismissLevelUp} />
+      )}
     </View>
   );
 }
@@ -1070,6 +1383,44 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
 
+  /* ---- Rarity sunburst (epic/legendary) ---- */
+  sunburstWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sunburstLayer: {
+    position: 'absolute',
+    width: SUNBURST_SIZE,
+    height: SUNBURST_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sunburstBarH: {
+    position: 'absolute',
+    width: SUNBURST_SIZE,
+    height: 2,
+    borderRadius: 1,
+  },
+  sunburstBarV: {
+    position: 'absolute',
+    width: 2,
+    height: SUNBURST_SIZE,
+    borderRadius: 1,
+  },
+
+  /* ---- Rarity particles (epic/legendary) ---- */
+  particleField: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  particle: {
+    position: 'absolute',
+    bottom: 0,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
   /* ---- Card face ---- */
   cardFace: {
     width: CARD_WIDTH,
@@ -1123,6 +1474,26 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 40,
+  },
+
+  /* ---- Rarity stamp (epic/legendary foil badge) ---- */
+  stampWrap: {
+    position: 'absolute',
+    top: spacing.md,
+    left: -spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    zIndex: 5,
+  },
+  stampText: {
+    ...typography.label,
+    fontWeight: '800',
+    letterSpacing: 1.4,
   },
 
   /* ---- Card info panel ---- */
