@@ -39,7 +39,42 @@ function before any real scale.
 *(Function code + this wiring land in a follow-up slice; documented here so the
 security step isn't forgotten.)*
 
-## 4. Production maps (future) — real map tiles
+## 4. Recognition proxies (keep tokens off-device) — IMPORTANT, before any public release
+Same problem as the Vision key: if `INATURALIST_API_TOKEN` / `PLANTNET_API_KEY` are
+set in the client `.env`, they ship inside the app bundle and can be extracted and
+abused on your bill. Two edge functions mirror the `vision-proxy` pattern —
+`inat-proxy` and `plantnet-proxy` — each verifies the caller's Supabase JWT, then
+forwards the multipart photo body to the real API with the token/key attached
+server-side, and returns the response verbatim. Neither function reads or forwards
+anything beyond the image (no GPS, no extra fields).
+1. Deploy both functions (KEEP JWT verification on — do NOT pass
+   `--no-verify-jwt`):
+   ```
+   supabase functions deploy inat-proxy
+   supabase functions deploy plantnet-proxy
+   ```
+2. Set the secrets server-side:
+   ```
+   supabase secrets set INATURALIST_API_TOKEN=<your iNaturalist token>
+   supabase secrets set PLANTNET_API_KEY=<your PlantNet key>
+   ```
+3. In `.env`, point the app at the deployed function URLs and remove the raw
+   credentials:
+   ```
+   INAT_PROXY_URL=https://<project>.functions.supabase.co/inat-proxy
+   PLANTNET_PROXY_URL=https://<project>.functions.supabase.co/plantnet-proxy
+   ```
+   then REMOVE `INATURALIST_API_TOKEN` and `PLANTNET_API_KEY` from the client
+   `.env`. The clients already prefer the proxy (and send the signed-in user's
+   session token) whenever its URL is set — see `inatClient.ts` /
+   `plantnetClient.ts` — falling back to the direct API + raw credential only
+   when no proxy URL is configured.
+With JWT verification on, only signed-in devices can call either proxy — not the
+open internet. Both functions leave per-user rate limiting as a documented `TODO`
+(needs a table/KV to count and throttle by caller id) — add it before any real
+scale.
+
+## 5. Production maps (future) — real map tiles
 Needs a Google Maps key + a dev build (native maps don't render in Expo Go):
 - Add `GOOGLE_MAPS_API_KEY` to `app.json` + set `MAPS_PROVIDER=google` in `.env`
   (flips `env.useNativeMaps`), then `npx expo run:android`.
