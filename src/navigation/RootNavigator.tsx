@@ -211,6 +211,10 @@ function TabNavigator() {
       <Tab.Screen
         name="Capture"
         options={{
+          // Full-screen camera: hide the bottom tab bar while capturing so the
+          // shutter no longer overlaps it (WhatsApp-style). A close button inside
+          // the screen returns to Home.
+          tabBarStyle: { display: 'none' },
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="Capture" focused={focused} isCenterCapture />
           ),

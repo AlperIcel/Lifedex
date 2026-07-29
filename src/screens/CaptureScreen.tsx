@@ -82,6 +82,7 @@ const C = {
       'LifeDex uses your camera to identify animals, plants, trees and mushrooms. Your photos are private evidence — only an AI-recreated card is shared.',
     grantCameraAccess: 'Grant Camera Access',
     capturePhotoA11y: 'Capture photo',
+    close: 'Close',
   },
   de: {
     framingHint: 'Tier oder Pflanze klar im Bild einrahmen',
@@ -112,6 +113,7 @@ const C = {
       'LifeDex nutzt deine Kamera, um Tiere, Pflanzen, Bäume und Pilze zu bestimmen. Deine Fotos sind private Nachweise — geteilt wird nur eine KI-generierte Karte.',
     grantCameraAccess: 'Kamerazugriff erlauben',
     capturePhotoA11y: 'Foto aufnehmen',
+    close: 'Schließen',
   },
 } as const;
 
@@ -504,6 +506,11 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
     setFacing((f) => (f === 'back' ? 'front' : 'back'));
   }, []);
 
+  /* ---------- Close the camera → back to Home ---------- */
+  const handleClose = useCallback(() => {
+    navigation.navigate('Tabs', { screen: 'Home' });
+  }, [navigation]);
+
   /* ---------- Dismiss overlay ---------- */
   const handleDismiss = useCallback(() => {
     setPipeline({ phase: 'idle' });
@@ -573,9 +580,21 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <View style={styles.topBarBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveDotLabel}>LIVE</Text>
+        <View style={styles.topBarLeft}>
+          <Pressable
+            style={styles.flipBtn}
+            onPress={handleClose}
+            disabled={captureActive}
+            hitSlop={10}
+            accessibilityLabel={t('close')}
+            accessibilityRole="button"
+          >
+            <Ionicons name="close" size={26} color={colors.textPrimary} />
+          </Pressable>
+          <View style={styles.topBarBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveDotLabel}>LIVE</Text>
+          </View>
         </View>
         <Pressable style={styles.flipBtn} onPress={handleFlip} disabled={captureActive}>
           <Ionicons name="camera-reverse-outline" size={22} color={colors.textPrimary} />
@@ -676,6 +695,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   topBarBadge: {
     flexDirection: 'row',
