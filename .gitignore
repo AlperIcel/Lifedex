@@ -13,3 +13,7 @@ yarn-error.log*
 .DS_Store
 coverage/
 *.orig.*
+
+# Native prebuild output (managed workflow - EAS prebuilds in the cloud)
+/android
+/ios
