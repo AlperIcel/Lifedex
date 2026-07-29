@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "inat:token": "node scripts/refresh-inat-token.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
