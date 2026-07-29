@@ -1,22 +1,20 @@
 /**
  * Resilience/routing tests for INatRecognitionProvider. The network client
- * (scoreImage) and the observation-count lookup are mocked; the real mapper runs
- * so this covers the integration of map + route + enrich + fallback. No network
- * happens.
+ * (scoreImage) and the taxon lookup (observation count + family) are mocked;
+ * the real mapper runs so this covers the integration of map + route + enrich
+ * + reclassify + fallback. No network happens.
  */
 import type { RecognitionResult } from '@/domain/types';
-import { fetchObservationsCount } from '@/lib/inatObservations';
+import { fetchTaxonInfo } from '@/lib/inatObservations';
 import type { VisionRecognitionProvider } from '../../interfaces';
 import { scoreImage } from '../inatClient';
 import type { InatScoreResponse, InatTaxon } from '../inatMapping';
 import { INatRecognitionProvider } from '../inatVision';
 
 jest.mock('../inatClient', () => ({ scoreImage: jest.fn() }));
-jest.mock('@/lib/inatObservations', () => ({ fetchObservationsCount: jest.fn() }));
+jest.mock('@/lib/inatObservations', () => ({ fetchTaxonInfo: jest.fn() }));
 const scoreImageMock = scoreImage as jest.MockedFunction<typeof scoreImage>;
-const fetchCountMock = fetchObservationsCount as jest.MockedFunction<
-  typeof fetchObservationsCount
->;
+const fetchTaxonInfoMock = fetchTaxonInfo as jest.MockedFunction<typeof fetchTaxonInfo>;
 
 function inatResp(
   combined_score: number,
@@ -119,11 +117,11 @@ describe('INatRecognitionProvider', () => {
 describe('INatRecognitionProvider — observationsCount', () => {
   it('looks the count up by taxon id and attaches it', async () => {
     scoreImageMock.mockResolvedValue(inatResp(90, 'Salamandra atra', 'Amphibia'));
-    fetchCountMock.mockResolvedValue(3_200);
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 3_200 });
     const provider = new INatRecognitionProvider(OPTS);
 
     const r = await provider.recognize('file:///s.jpg');
-    expect(fetchCountMock).toHaveBeenCalledWith(1); // the accepted taxon id
+    expect(fetchTaxonInfoMock).toHaveBeenCalledWith(1); // the accepted taxon id
     expect(r.observationsCount).toBe(3_200);
   });
 
@@ -135,12 +133,12 @@ describe('INatRecognitionProvider — observationsCount', () => {
 
     const r = await provider.recognize('file:///s.jpg');
     expect(r.observationsCount).toBe(3_200);
-    expect(fetchCountMock).not.toHaveBeenCalled();
+    expect(fetchTaxonInfoMock).not.toHaveBeenCalled();
   });
 
   it('still returns a usable result when the lookup fails (never blocks a catch)', async () => {
     scoreImageMock.mockResolvedValue(inatResp(90, 'Vulpes vulpes', 'Mammalia'));
-    fetchCountMock.mockResolvedValue(undefined);
+    fetchTaxonInfoMock.mockResolvedValue({});
     const provider = new INatRecognitionProvider(OPTS);
 
     const r = await provider.recognize('file:///f.jpg');
@@ -150,7 +148,7 @@ describe('INatRecognitionProvider — observationsCount', () => {
 
   it('never lets a thrown lookup break recognition', async () => {
     scoreImageMock.mockResolvedValue(inatResp(90, 'Vulpes vulpes', 'Mammalia'));
-    fetchCountMock.mockRejectedValue(new Error('boom'));
+    fetchTaxonInfoMock.mockRejectedValue(new Error('boom'));
     const provider = new INatRecognitionProvider(OPTS);
 
     const r = await provider.recognize('file:///f.jpg');
@@ -162,19 +160,19 @@ describe('INatRecognitionProvider — observationsCount', () => {
     // PlantNet overrode iNat's guess — we have no iNat taxon id for its species,
     // so claiming iNat's count for it would be a lie about rarity.
     scoreImageMock.mockResolvedValue(inatResp(60, 'Quercus robur', 'Plantae'));
-    fetchCountMock.mockResolvedValue(155_000);
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 155_000, family: 'Fagaceae' });
     const refiner = fakeRefiner(floraResult(0.9, 'Bellis perennis'));
     const provider = new INatRecognitionProvider(OPTS, refiner);
 
     const r = await provider.recognize('file:///p.jpg');
     expect(r.scientificName).toBe('Bellis perennis');
     expect(r.observationsCount).toBeUndefined();
-    expect(fetchCountMock).not.toHaveBeenCalled();
+    expect(fetchTaxonInfoMock).not.toHaveBeenCalled();
   });
 
   it('still enriches when the iNat base survives the refiner', async () => {
     scoreImageMock.mockResolvedValue(inatResp(80, 'Quercus robur', 'Plantae'));
-    fetchCountMock.mockResolvedValue(155_000);
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 155_000, family: 'Fagaceae' });
     const refiner = fakeRefiner(floraResult(0.2, 'Weak guess'));
     const provider = new INatRecognitionProvider(OPTS, refiner);
 
@@ -189,6 +187,99 @@ describe('INatRecognitionProvider — observationsCount', () => {
 
     const r = await provider.recognize('file:///nothing.jpg');
     expect(r.category).toBe('unknown');
-    expect(fetchCountMock).not.toHaveBeenCalled();
+    expect(fetchTaxonInfoMock).not.toHaveBeenCalled();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Tree reclassification — 'plant' -> 'tree' via the taxon's family    */
+/* ------------------------------------------------------------------ */
+
+describe('INatRecognitionProvider — tree reclassification', () => {
+  it('reclassifies a plant result to tree when the family is a known tree family', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Quercus robur', 'Plantae'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 155_000, family: 'Fagaceae' });
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///oak.jpg');
+    expect(r.category).toBe('tree');
+    expect(r.observationsCount).toBe(155_000);
+  });
+
+  it('leaves the category as plant when the family is not a tree family', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Bellis perennis', 'Plantae'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 620_000, family: 'Asteraceae' });
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///daisy.jpg');
+    expect(r.category).toBe('plant');
+  });
+
+  it('leaves the category as plant when the lookup resolves no family (best-effort)', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Quercus robur', 'Plantae'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 155_000 }); // no family
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///oak.jpg');
+    expect(r.category).toBe('plant');
+    expect(r.observationsCount).toBe(155_000);
+  });
+
+  it('leaves the category as plant when the whole lookup fails', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Quercus robur', 'Plantae'));
+    fetchTaxonInfoMock.mockResolvedValue({});
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///oak.jpg');
+    expect(r.category).toBe('plant');
+    expect(r.observationsCount).toBeUndefined();
+  });
+
+  it('never reclassifies an animal, even given a (nonsensical) tree family', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Vulpes vulpes', 'Mammalia'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 3_200, family: 'Fagaceae' });
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///fox.jpg');
+    expect(r.category).toBe('animal');
+  });
+
+  it('never reclassifies a mushroom, even given a (nonsensical) tree family', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(90, 'Amanita muscaria', 'Fungi'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 12_000, family: 'Fagaceae' });
+    const provider = new INatRecognitionProvider(OPTS);
+
+    const r = await provider.recognize('file:///mushroom.jpg');
+    expect(r.category).toBe('mushroom');
+  });
+
+  it('does not touch a result that is already tree (e.g. from the flora refiner)', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(60, 'Salix babylonica', 'Plantae'));
+    const refiner = fakeRefiner({
+      category: 'tree',
+      commonName: 'Weeping Willow',
+      scientificName: 'Salix babylonica',
+      confidence: 0.95,
+      captiveStatus: 'wild',
+      sensitivity: 'none',
+    });
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 9_000, family: 'Salicaceae' });
+    const provider = new INatRecognitionProvider(OPTS, refiner);
+
+    const r = await provider.recognize('file:///willow.jpg');
+    expect(r.category).toBe('tree');
+    expect(r.observationsCount).toBe(9_000);
+  });
+
+  it('does not reclassify a species the refiner overrode to a different taxon', async () => {
+    scoreImageMock.mockResolvedValue(inatResp(60, 'Quercus robur', 'Plantae'));
+    fetchTaxonInfoMock.mockResolvedValue({ observationsCount: 155_000, family: 'Fagaceae' });
+    const refiner = fakeRefiner(floraResult(0.9, 'Bellis perennis'));
+    const provider = new INatRecognitionProvider(OPTS, refiner);
+
+    const r = await provider.recognize('file:///p.jpg');
+    expect(r.scientificName).toBe('Bellis perennis');
+    expect(r.category).toBe('plant'); // not reclassified — wrong species' family
+    expect(fetchTaxonInfoMock).not.toHaveBeenCalled();
   });
 });
