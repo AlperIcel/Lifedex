@@ -4,7 +4,7 @@
 > resuming, and UPDATE it whenever something meaningful changes. Working dir:
 > `C:\Users\Alper\Downloads\LifeDex`.
 >
-> **Last updated:** 2026-07-28
+> **Last updated:** 2026-07-29
 
 ---
 
@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 551 passing
+npm test                 # jest — currently 589 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -62,12 +62,35 @@ DONE — species-accurate recognition (live-verified), a scalable context-honest
 rarity economy, and a genuine game-feel layer (escalated reveal + visible
 level-up + sound + daily loop + achievement rewards + wonder onboarding +
 Living-Dex + reduce-motion a11y). This is a coherent, well-tested single-player
-v1 (~565 tests). What stands between here and a store launch is mostly OWNER /
+v1 (~589 tests). What stands between here and a store launch is mostly OWNER /
 process work, not core invention: the EAS dev build (queued), field playtesting,
-recognition proxies deployed, Play closed testing (14-day clock), store assets,
-and content scale (bigger catalogue). Community/accounts remain cut to v1.1.
+recognition proxies **deployed** (the code — incl. token auto-refresh — is done),
+Play closed testing (14-day clock), store assets, and content scale (bigger
+catalogue). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
+- **Token expiry killed + tree/plant split + camera & a11y polish (2026-07-29).**
+  - **iNat proxy auto-refreshes its own 24h JWT** (`supabase/functions/inat-proxy`):
+    the ~24h personal `api_token` used to force a daily manual swap in `.env`. The
+    proxy now mints + caches the JWT server-side from a stable OAuth credential
+    (`INAT_OAUTH_ACCESS_TOKEN`, or a password grant) and refreshes it ~1 h before
+    expiry, with a single-flight mint guard and one 401-retry. The app never holds
+    a token again; the old `INATURALIST_API_TOKEN` still works as a legacy
+    no-refresh fallback. Owner action shrinks to one secret + deploy
+    (`docs/OWNER_SETUP.md` §4). Deno file (outside tsc/jest); app code unchanged.
+  - **Trees told apart from herbaceous plants by taxonomic family** (`8bb5e53`):
+    iNat's iconic taxa have no "tree" bucket, so a `plant` result is reclassified
+    to `tree` when the SAME best-effort `/v1/taxa` lookup resolves its family to a
+    known tree family (`src/domain/treeFamilies.ts`, precision-first 16-family set;
+    Rosaceae/Malvaceae deliberately excluded to avoid mislabelling shrubs/berries).
+    Reuses the rarity lookup — no extra request. Collection's category
+    sort/sections now genuinely separate trees from plants.
+  - **Full-screen camera** (`2738e8d`): tab bar hidden in capture mode; a
+    WhatsApp-style close (X) button + LIVE badge to leave photo mode, so the round
+    shutter no longer collides with the tab bar.
+  - **Reduce-motion honoured in the XP/level rings** (`LevelRing`/`XPRing`): the
+    arc-fill sweep snaps straight to its final value when the OS "reduce motion"
+    setting is on — the last animation that was still ignoring the a11y flag.
 - **Overnight game-feel + retention wave (2026-07-29, studio plan + audit).** On
   top of the rarity economy below: quick-wins (NEW-species badge, tier reveal
   copy, rarity card-back glow, Home streak flame, map Ionicons, 44pt targets);
@@ -229,8 +252,10 @@ Ordered path to an Android launch:
 3. **Real zoomable map** (react-native-maps + Google Maps key) with the same
    privacy markers (protected = circle only). Needs the dev build.
 4. **Key hardening (MANDATORY before any public build):** iNat/PlantNet server
-   proxies so the personal 24h token never ships in the client; per-user daily
-   cap at the proxy (= cost control + anti-abuse + monetization lever).
+   proxies so no token ships in the client — DONE in code, and the iNat proxy now
+   **auto-refreshes its own 24h JWT** (deploy + one OAuth secret is the only owner
+   step left; `docs/OWNER_SETUP.md` §4). Still to add: a per-user daily cap at the
+   proxy (= cost control + anti-abuse + monetization lever).
 5. **Monetization:** free + generous daily cap + one-time **"Pro"** unlock
    (higher/unlimited cap + cosmetics). Subscription deferred to v1.1.
 6. **Store prep:** icons/splash final, hosted privacy policy, Play Data Safety,
