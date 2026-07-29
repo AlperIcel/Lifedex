@@ -53,11 +53,34 @@ anything beyond the image (no GPS, no extra fields).
    supabase functions deploy inat-proxy
    supabase functions deploy plantnet-proxy
    ```
-2. Set the secrets server-side:
+2. Set the secrets server-side. PlantNet uses a stable key. For iNaturalist,
+   prefer the AUTO-REFRESH path so the token never expires again — the personal
+   api_token JWT lasts only ~24h, and the proxy re-mints it itself from a stable
+   OAuth credential (no more daily token swapping):
    ```
-   supabase secrets set INATURALIST_API_TOKEN=<your iNaturalist token>
+   # PlantNet (stable key)
    supabase secrets set PLANTNET_API_KEY=<your PlantNet key>
+
+   # iNaturalist — pick ONE:
+   # (a) RECOMMENDED: a long-lived OAuth access token (no password stored)
+   supabase secrets set INAT_OAUTH_ACCESS_TOKEN=<access_token>
+
+   # (b) Self-healing password grant (proxy mints its own tokens; stores password)
+   supabase secrets set INAT_OAUTH_CLIENT_ID=<id> INAT_OAUTH_CLIENT_SECRET=<secret> \
+                        INAT_USERNAME=<inat login> INAT_PASSWORD=<inat password>
+
+   # (c) LEGACY: a manual 24h JWT — works but STILL expires daily (dev only)
+   supabase secrets set INATURALIST_API_TOKEN=<your 24h token>
    ```
+   For option (a): register an app at **inaturalist.org/oauth/applications**, then
+   fetch an access token ONCE (paste the JSON's `access_token` into the secret):
+   ```
+   curl -X POST https://www.inaturalist.org/oauth/token \
+     -d grant_type=password -d client_id=<id> -d client_secret=<secret> \
+     -d username=<login> -d password=<password>
+   ```
+   With (a) or (b) the proxy caches the 24h JWT and refreshes it ~1h before expiry
+   (and retries once on a 401), so the app never sees a token and nothing expires.
 3. In `.env`, point the app at the deployed function URLs and remove the raw
    credentials:
    ```
