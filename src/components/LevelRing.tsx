@@ -8,6 +8,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { colors, motion, numeric, typography } from '@/theme/theme';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 /** Mutable copy of the theme's tabular-nums helper (TextStyle wants a mutable array). */
 const tabularNums = { fontVariant: [...numeric.fontVariant] };
@@ -58,6 +59,7 @@ export function LevelRing({
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - clamped);
   const cx = size / 2;
+  const reduceMotion = useReduceMotion();
 
   // Animate the arc. strokeDashoffset is not a native-driver style prop, so we
   // drive a detached native Animated value and forward frames to the SVG circle
@@ -70,6 +72,14 @@ export function LevelRing({
     const listenerId = animatedProgress.addListener(({ value }) => {
       arcRef.current?.setNativeProps?.({ strokeDashoffset: circ * (1 - value) });
     });
+    // Reduce Motion: no arc-fill sweep — snap straight to the final value.
+    if (reduceMotion) {
+      animatedProgress.setValue(clamped);
+      arcRef.current?.setNativeProps?.({ strokeDashoffset: offset });
+      return () => {
+        animatedProgress.removeListener(listenerId);
+      };
+    }
     const anim = Animated.timing(animatedProgress, {
       toValue: clamped,
       duration: motion.duration.slow,
@@ -81,7 +91,7 @@ export function LevelRing({
       anim.stop();
       animatedProgress.removeListener(listenerId);
     };
-  }, [animatedProgress, clamped, circ]);
+  }, [animatedProgress, clamped, circ, reduceMotion, offset]);
 
   if (Svg && Circle && Defs && LinearGradient && Stop) {
     return (

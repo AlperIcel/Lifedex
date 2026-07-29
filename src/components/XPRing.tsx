@@ -9,6 +9,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { Rarity } from '@/domain/types';
 import { rarityColors, motion, numeric, typography } from '@/theme/theme';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 /** Mutable copy of the theme's tabular-nums helper (TextStyle wants a mutable array). */
 const tabularNums = { fontVariant: [...numeric.fontVariant] };
@@ -44,6 +45,7 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
   const clampedProgress = Math.min(1, Math.max(0, progress));
   const dashOffset = circumference * (1 - clampedProgress);
   const center = size / 2;
+  const reduceMotion = useReduceMotion();
 
   const labelSize = size < 56 ? 11 : size < 80 ? 14 : 17;
 
@@ -60,6 +62,14 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
         strokeDashoffset: circumference * (1 - value),
       });
     });
+    // Reduce Motion: no arc-fill sweep — snap straight to the final value.
+    if (reduceMotion) {
+      animatedProgress.setValue(clampedProgress);
+      arcRef.current?.setNativeProps?.({ strokeDashoffset: dashOffset });
+      return () => {
+        animatedProgress.removeListener(listenerId);
+      };
+    }
     const anim = Animated.timing(animatedProgress, {
       toValue: clampedProgress,
       duration: motion.duration.slow,
@@ -71,7 +81,7 @@ export function XPRing({ xp, rarity, size = 72, progress = 1 }: Props): React.JS
       anim.stop();
       animatedProgress.removeListener(listenerId);
     };
-  }, [animatedProgress, clampedProgress, circumference]);
+  }, [animatedProgress, clampedProgress, circumference, reduceMotion, dashOffset]);
 
   if (Svg && Circle) {
     return (
