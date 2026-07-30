@@ -1008,22 +1008,28 @@ function StatusBadges({
 }): React.JSX.Element {
   const t = useT(C);
   const common = useCommon();
-  const captiveLabel =
-    sighting.captiveStatus === 'domestic' || sighting.captiveStatus === 'zoo_captive'
-      ? common.captive(sighting.captiveStatus)
-      : null;
+  const isCaptive =
+    sighting.captiveStatus === 'domestic' || sighting.captiveStatus === 'zoo_captive';
+  // Icon reflects the captive STATUS, not the category — a plant must not get an
+  // animal paw. Wild = outdoors/trail, domestic = home, zoo = enclosure/building.
+  const captiveIcon: keyof typeof Ionicons.glyphMap =
+    sighting.captiveStatus === 'domestic'
+      ? 'home-outline'
+      : sighting.captiveStatus === 'zoo_captive'
+        ? 'business-outline'
+        : 'trail-sign-outline';
 
   return (
     <View style={styles.badgeRow}>
       {/* Rarity */}
       <RarityBadge rarity={rarity} />
 
-      {/* Wild / Domestic / Zoo badge */}
-      {captiveLabel !== null ? (
-        <StatusPill icon="paw-outline" label={captiveLabel} color={colors.warning} />
-      ) : (
-        <StatusPill icon="paw-outline" label={common.captive('wild')} color={colors.success} />
-      )}
+      {/* Wild / Domestic / Zoo badge — icon reflects the STATUS, not the category */}
+      <StatusPill
+        icon={captiveIcon}
+        label={isCaptive ? common.captive(sighting.captiveStatus) : common.captive('wild')}
+        color={isCaptive ? colors.warning : colors.success}
+      />
 
       {/* Sensitivity badge */}
       {(sighting.sensitivity === 'sensitive' || sighting.sensitivity === 'protected') && (
