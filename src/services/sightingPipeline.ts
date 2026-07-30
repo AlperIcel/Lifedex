@@ -20,6 +20,7 @@
  * On moderation block: NOTHING is persisted; the caller receives
  * `{ blocked: true, reasons }` so it can show a blocked state.
  */
+import { resolveCaptiveStatus, isPubliclyReachable, type FindSetting } from '@/domain/accessibility';
 import { buildCardMetadata } from '@/domain/cardMetadata';
 import { evaluateDedup } from '@/domain/dedup';
 import { applySpeciesRule } from '@/domain/speciesRules';
@@ -47,6 +48,13 @@ export interface CreateSightingInput {
    * providers ignore this — it has no effect once a real provider is wired up.
    */
   mockSpecies?: string;
+  /**
+   * Where the player says they found it (capture-time toggle). 'home' marks the
+   * catch as domestic — capped rarity, private, and not shown as huntable on the
+   * map or shared to the community. Defaults to outdoors/public when unset.
+   * See src/domain/accessibility.ts.
+   */
+  findSetting?: FindSetting;
 }
 
 export interface CreateSightingOk {
@@ -109,6 +117,11 @@ export async function createSightingFromImage(
   // are actually hidden/fuzzed even when the provider reported 'none'.
   const recognition = applySpeciesRule(rawRecognition);
 
+  // The player's capture-time "outdoors vs at home" choice overrides the
+  // recogniser's captiveStatus — the CV can't see whether a plant is potted or a
+  // creature is a pet. This one value drives rarity cap, map reach, and sharing.
+  const captiveStatus = resolveCaptiveStatus(recognition.captiveStatus, input.findSetting);
+
   // 2b. De-duplication — the same species within ~1 km is a re-catch: it returns
   // the nearby entry without creating a new record or crediting XP. The SAME
   // species further away is a fresh discovery (the "hunt" rule — see dedup.ts).
@@ -145,7 +158,7 @@ export async function createSightingFromImage(
     recognition,
     confidence: recognition.confidence,
     isDuplicate: false,
-    captiveStatus: recognition.captiveStatus,
+    captiveStatus,
     sensitivity: recognition.sensitivity,
     qualityOk: moderation.qualityOk,
     isFirstDiscovery,
@@ -185,7 +198,7 @@ export async function createSightingFromImage(
     rarity: score.rarity,
     xp: score.xp,
     isFirstDiscovery,
-    captiveStatus: recognition.captiveStatus,
+    captiveStatus,
     sensitivity: recognition.sensitivity,
     privatePhotoUri, // PRIVATE — never exposed publicly
     publicImageUri,
@@ -212,7 +225,9 @@ export async function createSightingFromImage(
   // Supabase is disabled). Fire-and-forget so it never blocks the capture.
   // Gated behind features.communitySharing: v1 ships single-player only (see
   // STATUS.md "Release plan") — flip the flag on for v1.1's community layer.
-  if (features.communitySharing) {
+  // Private (at-home) finds are NEVER shared — their location is the player's
+  // home — so a shared feed/map only ever carries publicly-reachable wild finds.
+  if (features.communitySharing && isPubliclyReachable(captiveStatus)) {
     void pushSighting(sighting);
   }
 

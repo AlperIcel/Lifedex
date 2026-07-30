@@ -304,3 +304,36 @@ describe('createSightingFromImage — data integrity', () => {
     expect(card?.rarity).toBe(sighting?.rarity);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Capture setting: outdoors vs at home                                */
+/* ------------------------------------------------------------------ */
+
+describe('createSightingFromImage — find setting', () => {
+  it("findSetting 'home' persists the catch as domestic (capped)", async () => {
+    const result = await createSightingFromImage({
+      imageUri: CLEAN_URI,
+      mockSpecies: 'dog',
+      findSetting: 'home',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const sighting = lifeDexStore.getSightingById(result.sightingId);
+    expect(sighting?.captiveStatus).toBe('domestic');
+    // Domestic cap from scoring.ts: XP never exceeds 25.
+    expect(sighting?.xp ?? 999).toBeLessThanOrEqual(25);
+  });
+
+  it("findSetting 'outdoors' respects the recogniser (a pet stays domestic)", async () => {
+    const result = await createSightingFromImage({
+      imageUri: CLEAN_URI,
+      mockSpecies: 'dog',
+      findSetting: 'outdoors',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const sighting = lifeDexStore.getSightingById(result.sightingId);
+    // A dog is inherently domestic; 'outdoors' does NOT upgrade it to wild.
+    expect(sighting?.captiveStatus).toBe('domestic');
+  });
+});
