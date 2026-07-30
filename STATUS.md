@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 591 passing
+npm test                 # jest — currently 598 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -62,13 +62,22 @@ DONE — species-accurate recognition (live-verified), a scalable context-honest
 rarity economy, and a genuine game-feel layer (escalated reveal + visible
 level-up + sound + daily loop + achievement rewards + wonder onboarding +
 Living-Dex + reduce-motion a11y). This is a coherent, well-tested single-player
-v1 (~591 tests). What stands between here and a store launch is mostly OWNER /
+v1 (~598 tests). What stands between here and a store launch is mostly OWNER /
 process work, not core invention: the EAS dev build (queued), field playtesting,
 recognition proxies **deployed** (the code — incl. token auto-refresh — is done),
 Play closed testing (14-day clock), store assets, and content scale (bigger
 catalogue). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
+- **Capture "where did you find it?" — outdoors vs at home (2026-07-30).** The
+  recogniser can't tell a wild plant from a houseplant (defaults to `wild`), so
+  the player now chooses at capture: a segmented "Outdoors / At home" toggle above
+  the shutter (`91a44a9`). 'Home' resolves the catch to `domestic` via new pure
+  `src/domain/accessibility.ts` (`resolveCaptiveStatus` / `isPubliclyReachable`,
+  `5820bea`), which drives three things through the existing captiveStatus field:
+  the domestic XP/rarity cap (`scoring.ts`), a "not reachable" map marker (dimmed
+  pin + home badge, `a481a18`), and privacy — a home find is never shared to the
+  community feed/map (its location is the player's home). +9 tests.
 - **Daily-loop clarity + collection order + token refresher (2026-07-30).**
   - **Species of the Day is now an info card, not a catch task** (`4b33f98`): the
     row used to open the camera and show only a name — confusing (you can't catch
@@ -289,12 +298,11 @@ Community feed · shared map · real accounts (Apple/Google) · server-side scor
 validation · report button + `moderation_status` review · push · AI card restyle.
 
 ### Smaller follow-ups
-- **Capture accessibility toggle (PROPOSED — awaiting user decision):** the CV
-  can't tell a wild plant from a houseplant (it defaults every catch to `wild` —
-  `inatMapping.ts`). Offer a capture-time "outdoors / public vs at home / private"
-  choice to drive the map marker (public = huntable pin; private = "not
-  reachable"), the captive label, and a rarity cap for private finds. Pairs with
-  the real-map (parks/lakes) work, which needs the Google Maps key + dev build.
+- ✅ **Capture accessibility toggle DONE (2026-07-30):** the outdoors/at-home
+  choice drives captiveStatus (domestic rarity/XP cap), the map "not reachable"
+  marker, and privacy (home finds never shared). Still pending: the REAL map
+  (parks/lakes) needs a Google Maps key + dev build (owner) — the code path is
+  ready (`env.useNativeMaps`), the stylised MockMapView is the keyless fallback.
 - ✅ **km/mi done:** `formatDistance` (`store/settings.ts`) is now read by CardDetail
   (precision/radius), Home ("X away"), and Result (fuzzed-location note) — the
   units toggle in Settings updates them live. (Map circle stays geometric.)
