@@ -46,10 +46,10 @@ function findAch(list: Achievement[], id: string): Achievement {
 /* ------------------------------------------------------------------ */
 
 describe('computeAchievements — catalogue shape', () => {
-  it('returns a stable ~10-12 entry catalogue with unique ids', () => {
+  it('returns a stable ~13-15 entry catalogue with unique ids (12 original + 3 Solo Lab)', () => {
     const list = computeAchievements([], 0);
-    expect(list.length).toBeGreaterThanOrEqual(10);
-    expect(list.length).toBeLessThanOrEqual(12);
+    expect(list.length).toBeGreaterThanOrEqual(13);
+    expect(list.length).toBeLessThanOrEqual(15);
     expect(new Set(list.map((a) => a.id)).size).toBe(list.length);
   });
 
@@ -251,5 +251,49 @@ describe('computeAchievements — wild-explorer', () => {
   it('unlocks at 10 wild sightings', () => {
     const list = computeAchievements(distinctSightings(10, { captiveStatus: 'wild' }), 0);
     expect(findAch(list, 'wild-explorer').unlocked).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Solo Lab sample achievements: first-sample / field-researcher /     */
+/* lab-patron — driven by the optional 3rd `sampleCount` argument only  */
+/* ------------------------------------------------------------------ */
+
+describe('computeAchievements — Solo Lab sample achievements', () => {
+  it('defaults sampleCount to 0 when the 3rd argument is omitted (all three locked)', () => {
+    const list = computeAchievements([], 0);
+    expect(findAch(list, 'first-sample').unlocked).toBe(false);
+    expect(findAch(list, 'field-researcher').unlocked).toBe(false);
+    expect(findAch(list, 'lab-patron').unlocked).toBe(false);
+  });
+
+  it('first-sample unlocks at exactly 1 filed sample', () => {
+    expect(findAch(computeAchievements([], 0, 0), 'first-sample').unlocked).toBe(false);
+    expect(findAch(computeAchievements([], 0, 1), 'first-sample').unlocked).toBe(true);
+  });
+
+  it('field-researcher stays locked at 4 and unlocks at 5', () => {
+    const at4 = findAch(computeAchievements([], 0, 4), 'field-researcher');
+    expect(at4.unlocked).toBe(false);
+    expect(at4.progress.current).toBe(4);
+    expect(findAch(computeAchievements([], 0, 5), 'field-researcher').unlocked).toBe(true);
+  });
+
+  it('lab-patron unlocks at 15 and caps progress.current at 15 beyond that', () => {
+    expect(findAch(computeAchievements([], 0, 14), 'lab-patron').unlocked).toBe(false);
+    const at20 = findAch(computeAchievements([], 0, 20), 'lab-patron');
+    expect(at20.unlocked).toBe(true);
+    expect(at20.progress).toEqual({ current: 15, target: 15 });
+  });
+
+  it('sampleCount does NOT affect any of the other (sighting/streak-based) achievements', () => {
+    const withoutSamples = computeAchievements([], 0, 0);
+    const withSamples = computeAchievements([], 0, 20);
+    const otherIds = withoutSamples
+      .map((a) => a.id)
+      .filter((id) => !['first-sample', 'field-researcher', 'lab-patron'].includes(id));
+    for (const id of otherIds) {
+      expect(findAch(withSamples, id)).toEqual(findAch(withoutSamples, id));
+    }
   });
 });

@@ -443,3 +443,88 @@ describe('scoreSighting — rarity resolution chain', () => {
     expect(scoreSighting(zoo).xp).toBeLessThanOrEqual(15);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Solo Lab Makro-Linse bonus (+15%)                                    */
+/* ------------------------------------------------------------------ */
+
+describe('scoreSighting — Solo Lab macro lens bonus', () => {
+  it('adds +15% XP when macroLens is true, and records the reason', () => {
+    const without = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+    });
+    const withLens = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+      macroLens: true,
+    });
+    // base(rare)=80, confMult=1.0, cat(animal)=1.1 -> 88; macro lens: 88*1.15=101.2 -> 101
+    const resultWithout = scoreSighting(without, 'rare');
+    const resultWith = scoreSighting(withLens, 'rare');
+
+    expect(resultWithout.xp).toBe(88);
+    expect(resultWith.xp).toBe(101);
+    expect(resultWith.reason).toContain('macro lens');
+    expect(resultWithout.reason).not.toContain('macro lens');
+  });
+
+  it('stacks with the first-discovery bonus (applied just before it)', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'plant' }),
+      confidence: 1.0,
+      isFirstDiscovery: true,
+      macroLens: true,
+    });
+    // base(uncommon)=30, confMult=1.0, cat=1.0 -> 30; first ×1.5 -> 45; macro ×1.15 -> 51.75 -> 52
+    const result = scoreSighting(input, 'uncommon');
+    expect(result.xp).toBe(52);
+  });
+
+  it('still respects the zoo/captive cap (rarity forced common, XP <= 15)', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+      captiveStatus: 'zoo_captive',
+      macroLens: true,
+    });
+    const result = scoreSighting(input, 'legendary');
+    expect(result.rarity).toBe('common');
+    expect(result.xp).toBe(15);
+  });
+
+  it('still respects the domestic cap (XP <= 25)', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+      captiveStatus: 'domestic',
+      macroLens: true,
+    });
+    const result = scoreSighting(input, 'epic');
+    expect(result.xp).toBe(25);
+  });
+
+  it('still respects the duplicate floor (XP >= 1)', () => {
+    const input = makeInput({
+      recognition: makeRecognition({ category: 'plant' }),
+      confidence: 0.0,
+      isDuplicate: true,
+      macroLens: true,
+    });
+    const result = scoreSighting(input, 'common');
+    expect(result.xp).toBeGreaterThanOrEqual(1);
+  });
+
+  it('is a no-op when macroLens is false/undefined', () => {
+    const withFalse = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+      macroLens: false,
+    });
+    const withUndefined = makeInput({
+      recognition: makeRecognition({ category: 'animal' }),
+      confidence: 1.0,
+    });
+    expect(scoreSighting(withFalse, 'rare').xp).toBe(scoreSighting(withUndefined, 'rare').xp);
+  });
+});

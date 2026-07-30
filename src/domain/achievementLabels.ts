@@ -34,6 +34,9 @@ export const ACHIEVEMENT_TITLES: Record<string, Record<Lang, string>> = {
   'streak-7': { en: '7-Day Streak', de: '7 Tage am Stück' },
   'today-3': { en: 'Good Day', de: 'Guter Tag' },
   'wild-explorer': { en: 'Wild Only', de: 'Nur Wildnis' },
+  'first-sample': { en: 'First Sample', de: 'Erste Probe' },
+  'field-researcher': { en: 'Field Researcher', de: 'Feldforscher' },
+  'lab-patron': { en: 'Lab Patron', de: 'Labor-Förderer' },
 };
 
 /** Id -> icon, mirroring each `build(id, icon, ...)` call in computeAchievements(). */
@@ -50,6 +53,9 @@ export const ACHIEVEMENT_ICONS: Record<string, keyof typeof Ionicons.glyphMap> =
   'streak-7': 'flame',
   'today-3': 'today-outline',
   'wild-explorer': 'paw-outline',
+  'first-sample': 'flask-outline',
+  'field-researcher': 'flask',
+  'lab-patron': 'school-outline',
 };
 
 /** Title for achievement `id` in `lang`, falling back to English then the raw id. */

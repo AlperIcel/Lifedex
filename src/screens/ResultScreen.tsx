@@ -44,6 +44,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '@/navigation/types';
 import type { CardMetadata, Sighting } from '@/domain/types';
+import { canSubmitSample, isBonusFind } from '@/domain/lab';
 import { env } from '@/config/env';
 import { AchievementToast } from '@/components/AchievementToast';
 import { Button } from '@/components/Button';
@@ -51,6 +52,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { LevelUpOverlay } from '@/components/LevelUpOverlay';
 import { MockCardImage } from '@/components/MockCardImage';
 import { RarityBadge } from '@/components/RarityBadge';
+import { labStore, useLabStore } from '@/store/lab';
 import { lifeDexStore, useLifeDexStore } from '@/store/useLifeDexStore';
 import { haptics } from '@/utils/haptics';
 import { sound } from '@/utils/sound';
@@ -93,6 +95,15 @@ const C = {
     viewCollection: 'View Collection',
     captureAnother: 'Capture Another',
     newSpeciesBadge: 'New species!',
+
+    // Solo Lab banner (shown only for uncatalogued "bonus find" species).
+    labBannerTitle: 'Not in the species list — a special find!',
+    labObservationsLine: 'Only ~{count} records worldwide',
+    sendToLab: 'Send to the Lab',
+    sampleFiled: 'Sample filed on your bench',
+    rpEarnedLine: '+{rp} research points',
+    noVials: 'No sample vials left',
+    viewLab: 'View Lab',
   },
   de: {
     cardBackTagline: 'Natur gesammelt',
@@ -111,6 +122,15 @@ const C = {
     viewCollection: 'Sammlung ansehen',
     captureAnother: 'Nochmal aufnehmen',
     newSpeciesBadge: 'Neue Art!',
+
+    // Solo Lab banner (shown only for uncatalogued "bonus find" species).
+    labBannerTitle: 'Nicht im Artenkatalog — ein Besonderer Fund!',
+    labObservationsLine: 'Weltweit nur ~{count} Beobachtungen',
+    sendToLab: 'Ins Labor schicken',
+    sampleFiled: 'Probe auf deiner Forschungsbank abgelegt',
+    rpEarnedLine: '+{rp} Forschungspunkte',
+    noVials: 'Keine Probenröhrchen übrig',
+    viewLab: 'Zum Labor',
   },
 } as const;
 
@@ -1164,13 +1184,91 @@ function XpBanner({
 }
 
 /* ------------------------------------------------------------------ */
+/* Solo Lab banner — shown only for uncatalogued "bonus find" species  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Card-styled banner offering to file `sighting` as a Solo Lab sample. Only
+ * ever rendered when `isBonusFind(sighting)` is true (checked by the caller).
+ * Three states: send (vial available, not yet sampled), filed (just sampled
+ * OR already sampled in a prior session), and out-of-vials (ghost link to the
+ * Lab so the player can buy more — never a dead end).
+ */
+function LabBanner({
+  sighting,
+  navigation,
+}: {
+  sighting: Sighting;
+  navigation: Props['navigation'];
+}): React.JSX.Element {
+  const t = useT(C);
+  const lab = useLabStore();
+  const [filed, setFiled] = useState<{ rpEarned: number } | null>(null);
+  const rarityColor = rarityColors[sighting.rarity];
+
+  const gate = canSubmitSample(sighting, lab.samples, lab.vials);
+  const alreadyFiled = filed !== null || (!gate.ok && gate.reason === 'already-sampled');
+
+  const handleSend = useCallback(() => {
+    const result = labStore.submitSample(sighting);
+    if (result.ok) {
+      setFiled({ rpEarned: result.rpEarned ?? 0 });
+      haptics.success();
+    }
+  }, [sighting]);
+
+  const handleViewLab = useCallback(() => {
+    navigation.navigate('Lab');
+  }, [navigation]);
+
+  return (
+    <View style={[styles.labBanner, { borderColor: `${rarityColor}55` }]}>
+      <View style={styles.labBannerHeader}>
+        <View style={[styles.labBannerIconWrap, { backgroundColor: rarityTints[sighting.rarity] }]}>
+          <Ionicons
+            name={alreadyFiled ? 'checkmark-circle-outline' : 'flask-outline'}
+            size={18}
+            color={rarityColor}
+          />
+        </View>
+        <View style={styles.labBannerTextWrap}>
+          <Text style={styles.labBannerTitle}>
+            {alreadyFiled ? t('sampleFiled') : t('labBannerTitle')}
+          </Text>
+          {alreadyFiled && filed !== null ? (
+            <Text style={styles.labBannerLine}>{t('rpEarnedLine', { rp: filed.rpEarned })}</Text>
+          ) : !alreadyFiled && sighting.observationsCount !== undefined ? (
+            <Text style={styles.labBannerLine}>
+              {t('labObservationsLine', { count: sighting.observationsCount.toLocaleString() })}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.labBannerActions}>
+        {!alreadyFiled && (
+          <Button
+            title={gate.ok ? t('sendToLab') : t('noVials')}
+            onPress={gate.ok ? handleSend : handleViewLab}
+            variant={gate.ok ? 'primary' : 'ghost'}
+            size="sm"
+            icon="flask-outline"
+          />
+        )}
+        <Button title={t('viewLab')} onPress={handleViewLab} variant="ghost" size="sm" />
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Main screen                                                         */
 /* ------------------------------------------------------------------ */
 
 type Phase = 'flipping' | 'revealed';
 
 /** Number of staggered reveal groups below the card. */
-const REVEAL_GROUPS = 6;
+const REVEAL_GROUPS = 7;
 
 /** Beat after the reveal settles (stagger + XP count-up) before the
  * level-up takeover hijacks the screen — a deliberate second climax, not a
@@ -1399,8 +1497,19 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
           <XpBanner xp={sighting.xp} rarity={rarity} countActive={isRevealed} reduceMotion={reduceMotion} />
         </Reveal>
 
-        {/* ---- Safety notes + card description ---- */}
+        {/* ---- Solo Lab banner (bonus finds only — a species outside the
+            curated catalogue). Always rendered so the stagger indices below
+            stay aligned; shows nothing for a catalogued species. ---- */}
         <Reveal anim={revealAnims[4]!} style={styles.fullWidth}>
+          {isBonusFind(sighting) ? (
+            <LabBanner sighting={sighting} navigation={navigation} />
+          ) : (
+            <View />
+          )}
+        </Reveal>
+
+        {/* ---- Safety notes + card description ---- */}
+        <Reveal anim={revealAnims[5]!} style={styles.fullWidth}>
           {card.safetyNotes !== undefined && card.safetyNotes.length > 0 && (
             <SafetyNotes notes={card.safetyNotes} />
           )}
@@ -1410,7 +1519,7 @@ export default function ResultScreen({ route, navigation }: Props): React.JSX.El
         </Reveal>
 
         {/* ---- Action buttons ---- */}
-        <Reveal anim={revealAnims[5]!} style={styles.fullWidth}>
+        <Reveal anim={revealAnims[6]!} style={styles.fullWidth}>
           <View style={styles.actions} pointerEvents={isRevealed ? 'auto' : 'none'}>
             {/* Record is already persisted by the pipeline — go straight to collection. */}
             <Button
@@ -1837,6 +1946,48 @@ const styles = StyleSheet.create({
   /* ---- Actions ---- */
   actions: {
     width: '100%',
+    gap: spacing.sm,
+  },
+
+  /* ---- Solo Lab banner (bonus finds) ---- */
+  labBanner: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  labBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  labBannerIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  labBannerTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  labBannerTitle: {
+    ...typography.callout,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  labBannerLine: {
+    ...typography.footnote,
+    color: colors.textSecondary,
+  },
+  labBannerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
 });

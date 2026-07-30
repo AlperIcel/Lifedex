@@ -13,7 +13,8 @@
  *   │                        replaces Leaderboard, see STATUS.md)
  *   ├── Result              (modal presentation over tabs)
  *   ├── CardDetail          (modal presentation over tabs)
- *   └── SpeciesOfDay        (modal presentation over tabs — info screen, not a capture flow)
+ *   ├── SpeciesOfDay        (modal presentation over tabs — info screen, not a capture flow)
+ *   └── Lab                 (modal presentation over tabs — Solo Lab research bench)
  *
  * Aesthetic: dark nature-game, collectible-card feel.
  * Uses theme colors throughout — never hardcodes hex values inline.
@@ -38,6 +39,8 @@ import { StatsScreen } from '@/screens/StatsScreen';
 import { CardDetailScreen } from '@/screens/CardDetailScreen';
 // SpeciesOfDayScreen is a named export
 import { SpeciesOfDayScreen } from '@/screens/SpeciesOfDayScreen';
+// LabScreen is a named export
+import { LabScreen } from '@/screens/LabScreen';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
 import { colors, elevation, radius, spacing, typography } from '@/theme/theme';
 
@@ -324,6 +327,17 @@ export function RootNavigator({
       <Stack.Screen
         name="SpeciesOfDay"
         component={SpeciesOfDayScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
+
+      <Stack.Screen
+        name="Lab"
+        component={LabScreen}
         options={{
           presentation: 'modal',
           animation: 'slide_from_bottom',

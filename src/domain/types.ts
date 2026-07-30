@@ -103,6 +103,22 @@ export const RecognitionResultSchema = z.object({
    * scoring falls back to the generic category default.
    */
   observationsCount: z.number().int().nonnegative().optional(),
+  /**
+   * iNaturalist's top-level "iconic taxon" for the recognised taxon (e.g.
+   * 'Insecta', 'Arachnida', 'Mollusca', 'Aves', 'Plantae', 'Fungi'), when the
+   * provider supplies one. Feeds src/domain/lab.ts's `qualifiesForMacroLens` —
+   * the real macro-subject signal once `subjectBox` is absent, which it always
+   * is for the real iNat/PlantNet providers (score_image has no localization).
+   * Optional so older persisted/mocked recognitions without it still validate.
+   */
+  iconicTaxon: z.string().optional(),
+  /**
+   * The iNaturalist taxon id of the accepted candidate (see
+   * src/providers/inaturalist/inatMapping.ts's `topTaxonId`/`acceptedTaxon`).
+   * Carried through onto `Sighting.taxonId` at capture time. Optional/best-effort
+   * — a missing id never blocks a catch.
+   */
+  taxonId: z.number().int().positive().optional(),
 });
 export type RecognitionResult = z.infer<typeof RecognitionResultSchema>;
 
@@ -127,6 +143,13 @@ export const ScoreInputSchema = z.object({
   qualityOk: z.boolean(),
   isFirstDiscovery: z.boolean(),
   streak: z.number().int().nonnegative(),
+  /**
+   * True when the Solo Lab's Makro-Linse gadget applies (owned AND
+   * `qualifiesForMacroLens(recognition)` — gated by the caller, not here).
+   * Drives a +15% XP step in scoring.ts. Optional so existing callers/tests
+   * that don't set it are unaffected (undefined behaves as false).
+   */
+  macroLens: z.boolean().optional(),
 });
 export type ScoreInput = z.infer<typeof ScoreInputSchema>;
 
@@ -182,6 +205,18 @@ export const SightingSchema = z.object({
   publicLocation: PublicLocationSchema,
   card: CardMetadataSchema,
   moderation: ModerationResultSchema,
+  /**
+   * GLOBAL iNaturalist observation count for this taxon, carried over from
+   * `RecognitionResult.observationsCount` at capture time. Powers the Solo
+   * Lab's rarity-intel line (ResultScreen/LabScreen). Optional/best-effort so
+   * older persisted rows without it still validate.
+   */
+  observationsCount: z.number().int().nonnegative().optional(),
+  /**
+   * iNaturalist taxon id, carried over from `RecognitionResult.taxonId`.
+   * Optional/best-effort so older persisted rows without it still validate.
+   */
+  taxonId: z.number().int().positive().optional(),
 });
 export type Sighting = z.infer<typeof SightingSchema>;
 

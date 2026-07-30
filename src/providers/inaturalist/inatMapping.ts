@@ -223,6 +223,13 @@ export function topTaxonId(res: InatScoreResponse): number | undefined {
  * - observationsCount: `taxon.observations_count` when the response embeds it
  *                  (free rarity signal); otherwise undefined and the provider
  *                  fetches it via `topTaxonId` + the public /v1/taxa endpoint.
+ * - iconicTaxon:   `taxon.iconic_taxon_name` verbatim (e.g. 'Insecta') — feeds
+ *                  src/domain/lab.ts's `qualifiesForMacroLens`.
+ * - taxonId:       `taxon.id` of the accepted candidate — same value
+ *                  `topTaxonId(res)` returns (both read the SAME accepted
+ *                  candidate), surfaced directly on the result so callers that
+ *                  only see the mapped RecognitionResult (e.g. the sighting
+ *                  pipeline) can still carry it onto the persisted Sighting.
  *
  * Returns NO_CATCH when there are no results, confidence < MIN_CONFIDENCE, or the
  * top taxon is coarser than genus.
@@ -266,6 +273,8 @@ export function mapInatResponse(res: InatScoreResponse): RecognitionResult {
     captiveStatus,
     sensitivity,
     observationsCount,
+    iconicTaxon: taxon.iconic_taxon_name,
+    taxonId: taxon.id,
     // subjectBox intentionally omitted: score_image has no localization.
   };
 }

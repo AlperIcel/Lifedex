@@ -26,6 +26,8 @@ export type RootStackParamList = {
   SpeciesOfDay: { name: string; scientificName?: string; rarity: Rarity; category: Category };
   Result: { sightingId: string };
   Settings: undefined;
+  /** Solo Lab — the player's field bench for uncatalogued "bonus find" samples. */
+  Lab: undefined;
 };
 
 declare global {

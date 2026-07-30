@@ -87,6 +87,20 @@ const SPECIES_TABLE: SpeciesEntry[] = [
     sensitivity: 'none',
     observationsCount: 95_000,
   },
+  {
+    category: 'animal',
+    commonName: 'Peacock Butterfly',
+    scientificName: 'Aglais io',
+    confidence: 0.85,
+    captiveStatus: 'wild',
+    sensitivity: 'none',
+    observationsCount: 90_000,
+    // Demonstrates the Solo Lab's Makro-Linse gadget (src/domain/lab.ts's
+    // qualifiesForMacroLens) keyless — real iNat/PlantNet catches carry
+    // iconicTaxon from the recognised taxonomy, never subjectBox (always
+    // undefined there — see inatMapping.ts).
+    iconicTaxon: 'Insecta',
+  },
   // ── plants ─────────────────────────────────────────────────────────────
   {
     category: 'plant',

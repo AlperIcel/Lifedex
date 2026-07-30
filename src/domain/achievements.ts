@@ -105,11 +105,23 @@ function build(
  *   streak-7       - 7-day capture streak
  *   today-3        - 3 captures today
  *   wild-explorer  - 10 wild (non-captive) captures
+ *   first-sample   - file 1 sample on the Solo Lab bench
+ *   field-researcher- file 5 samples on the Solo Lab bench
+ *   lab-patron     - file 15 samples on the Solo Lab bench
  *
  * The "today" bucket is evaluated against the real wall clock, matching the
  * same convention as `selectTodayCount` in useLifeDexStore.ts.
+ *
+ * `sampleCount` (Solo Lab filed-sample total, src/store/lab.ts) is an OPTIONAL
+ * 3rd argument, defaulting to 0 — every existing caller that only tracks
+ * sightings/streak is unaffected. It drives ONLY the three lab achievements
+ * above; nothing else here reads it.
  */
-export function computeAchievements(sightings: Sighting[], streak: number): Achievement[] {
+export function computeAchievements(
+  sightings: Sighting[],
+  streak: number,
+  sampleCount = 0,
+): Achievement[] {
   const now = Date.now();
   const stats = computeStats(sightings);
   const categoriesPresent = CORE_CATEGORIES.filter((c) => stats.byCategory[c] > 0).length;
@@ -127,5 +139,8 @@ export function computeAchievements(sightings: Sighting[], streak: number): Achi
     build('streak-7', 'flame', streak, 7),
     build('today-3', 'today-outline', countToday(sightings, now), 3),
     build('wild-explorer', 'paw-outline', countWild(sightings), 10),
+    build('first-sample', 'flask-outline', sampleCount, 1),
+    build('field-researcher', 'flask', sampleCount, 5),
+    build('lab-patron', 'school-outline', sampleCount, 15),
   ];
 }

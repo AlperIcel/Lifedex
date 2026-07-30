@@ -53,6 +53,7 @@ import {
   useLifeDexStore,
 } from '@/store/useLifeDexStore';
 import { loadStreakMeta } from '@/store/persistence';
+import { labStore } from '@/store/lab';
 import type { RootStackParamList } from '@/navigation/types';
 import { env } from '@/config/env';
 import { useSettings, formatDistance } from '@/store/settings';
@@ -151,6 +152,7 @@ const C = {
     claimReward: 'Claim +{xp} XP',
     rewardClaimed: 'Reward claimed',
     completeQuestsFirst: '{done}/{total} quests done',
+    soloLabA11y: 'Open the Solo Lab',
   },
   de: {
     subtitle: 'Erfassen · Sammeln · Schützen',
@@ -195,6 +197,7 @@ const C = {
     claimReward: '+{xp} XP abholen',
     rewardClaimed: 'Belohnung abgeholt',
     completeQuestsFirst: '{done}/{total} Quests geschafft',
+    soloLabA11y: 'Solo-Labor öffnen',
   },
 } as const;
 
@@ -522,9 +525,19 @@ export function HomeScreen(): React.JSX.Element {
     navigation.navigate('Settings');
   }, [navigation]);
 
+  const handleLabPress = useCallback(() => {
+    haptics.tap();
+    navigation.navigate('Lab');
+  }, [navigation]);
+
   const handleClaimPress = useCallback(() => {
     const result = claimDailyReward(todayKey);
-    if (result.claimed) haptics.success();
+    if (result.claimed) {
+      haptics.success();
+      // A claimed daily reward also tops up one Solo Lab sample vial —
+      // idempotent per dayKey, so this never double-grants.
+      labStore.grantDailyVial(todayKey);
+    }
   }, [claimDailyReward, todayKey]);
 
   return (
@@ -568,9 +581,20 @@ export function HomeScreen(): React.JSX.Element {
         <View style={styles.todayCard}>
           <View style={styles.todayHeaderRow}>
             <Text style={styles.todayTitle}>{t('dailyQuestsTitle')}</Text>
-            <Text style={styles.todayBadge}>
-              {t('questProgress', { current: doneCount, target: quests.length })}
-            </Text>
+            <View style={styles.todayHeaderRight}>
+              <Text style={styles.todayBadge}>
+                {t('questProgress', { current: doneCount, target: quests.length })}
+              </Text>
+              <Pressable
+                onPress={handleLabPress}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('soloLabA11y')}
+                style={({ pressed }) => [styles.labIconButton, pressed && styles.labIconButtonPressed]}
+              >
+                <Ionicons name="flask-outline" size={16} color={colors.textSecondary} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.questList}>
@@ -886,6 +910,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     ...{ fontVariant: ['tabular-nums'] as const },
+  },
+  todayHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  labIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+  },
+  labIconButtonPressed: {
+    backgroundColor: colors.surfaceHigh,
   },
   questList: {
     gap: spacing.sm + 4,

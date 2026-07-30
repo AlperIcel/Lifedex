@@ -63,12 +63,21 @@ export async function saveUserCaptures(list: PersistedCapture[]): Promise<void> 
   }
 }
 
+/**
+ * Mirrors src/store/lab.ts's own STORAGE_KEY constant — duplicated (not
+ * imported) to avoid a persistence.ts -> lab.ts -> useLifeDexStore.ts ->
+ * persistence.ts import cycle (useLifeDexStore.ts already imports this file).
+ * Keep both literals in sync.
+ */
+const LAB_STORAGE_KEY = 'lifedex:lab:v1';
+
 /** Remove all persisted captures (factory reset; best-effort). */
 export async function clearUserCaptures(): Promise<void> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
     await AsyncStorage.removeItem(STREAK_KEY);
     await AsyncStorage.removeItem(DAILY_REWARD_KEY);
+    await AsyncStorage.removeItem(LAB_STORAGE_KEY);
   } catch {
     // ignore
   }

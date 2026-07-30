@@ -7,6 +7,11 @@
  * 3. Category multiplier (mushrooms rare → 1.2×, animals → 1.1×, default 1.0×).
  * 4. Sensitivity bonus (sensitive +20 %, protected +40 %).
  * 5. First-discovery bonus (+50 % on top of everything so far).
+ * 5b. Solo Lab Makro-Linse bonus (+15 % when `input.macroLens` — gated by the
+ *    caller via `qualifiesForMacroLens` + gadget ownership, see
+ *    src/domain/lab.ts). Applied HERE, before the streak/quality/captive
+ *    steps, so it still passes through the zoo/domestic caps and the
+ *    duplicate floor below rather than bypassing them.
  * 6. Streak multiplier (every 5-day streak step adds 5 %, capped at +25 %).
  * 7. Image quality gate: poor quality → halve XP, override rarity down one tier.
  * 8. Captive/zoo cap: zoo_captive → cap at 15 XP and force rarity = 'common'.
@@ -35,6 +40,7 @@
  */
 
 import type { RarityScoringProvider } from '../providers/interfaces';
+import { LAB_TUNING } from './lab';
 import { rarityFromObservationCount } from './observationRarity';
 import type { Category, Rarity, ScoreInput, ScoreResult } from './types';
 
@@ -175,6 +181,14 @@ export function scoreSighting(
     xp *= 1.5;
   }
 
+  // ── 5b. Solo Lab Makro-Linse bonus (+15 %) ───────────────────────
+  // Placed BEFORE the streak/quality/captive steps so it still respects the
+  // zoo/domestic caps and the duplicate floor further down — a post-score
+  // bonus would bypass them.
+  if (input.macroLens) {
+    xp *= 1 + LAB_TUNING.macroLensXpBonus;
+  }
+
   // ── 6. Streak multiplier (max +25 %, step per 5 days) ────────────
   const streakSteps = Math.floor(streak / 5);
   const streakMult = 1 + clamp(streakSteps * 0.05, 0, 0.25);
@@ -213,6 +227,7 @@ export function scoreSighting(
   if (sensitivity === 'sensitive' || sensitivity === 'protected')
     reasons.push(`${sensitivity} species`);
   if (isFirstDiscovery) reasons.push('first discovery');
+  if (input.macroLens) reasons.push('macro lens');
   if (streak > 0) reasons.push(`streak ×${streak}`);
   if (isDuplicate) reasons.push('duplicate −70 %');
 

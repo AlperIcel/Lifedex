@@ -24,6 +24,7 @@ import { computeStats } from '@/domain/stats';
 import type { Category, Rarity } from '@/domain/types';
 import { useCommon, useT } from '@/i18n';
 import { loadStreakMeta } from '@/store/persistence';
+import { useLabStore } from '@/store/lab';
 import {
   levelBounds,
   selectTodayCount,
@@ -82,6 +83,12 @@ const C = {
     achToday3Desc: 'Log 3 sightings today.',
     achWildExplorerTitle: 'Wild Only',
     achWildExplorerDesc: 'Log 10 wild (non-captive) sightings.',
+    achFirstSampleTitle: 'First Sample',
+    achFirstSampleDesc: 'File your first sample on the Solo Lab bench.',
+    achFieldResearcherTitle: 'Field Researcher',
+    achFieldResearcherDesc: 'File 5 samples on the Solo Lab bench.',
+    achLabPatronTitle: 'Lab Patron',
+    achLabPatronDesc: 'File 15 samples on the Solo Lab bench.',
   },
   de: {
     title: 'Statistiken',
@@ -121,6 +128,12 @@ const C = {
     achToday3Desc: 'Erfasse heute 3 Sichtungen.',
     achWildExplorerTitle: 'Nur Wildnis',
     achWildExplorerDesc: 'Erfasse 10 wilde (nicht domestizierte) Sichtungen.',
+    achFirstSampleTitle: 'Erste Probe',
+    achFirstSampleDesc: 'Reiche deine erste Probe auf der Forschungsbank ein.',
+    achFieldResearcherTitle: 'Feldforscher',
+    achFieldResearcherDesc: 'Reiche 5 Proben auf der Forschungsbank ein.',
+    achLabPatronTitle: 'Labor-Förderer',
+    achLabPatronDesc: 'Reiche 15 Proben auf der Forschungsbank ein.',
   },
 } as const;
 
@@ -143,6 +156,9 @@ const ACHIEVEMENT_COPY_KEYS: Record<
   'streak-7': { titleKey: 'achStreak7Title', descKey: 'achStreak7Desc' },
   'today-3': { titleKey: 'achToday3Title', descKey: 'achToday3Desc' },
   'wild-explorer': { titleKey: 'achWildExplorerTitle', descKey: 'achWildExplorerDesc' },
+  'first-sample': { titleKey: 'achFirstSampleTitle', descKey: 'achFirstSampleDesc' },
+  'field-researcher': { titleKey: 'achFieldResearcherTitle', descKey: 'achFieldResearcherDesc' },
+  'lab-patron': { titleKey: 'achLabPatronTitle', descKey: 'achLabPatronDesc' },
 };
 
 function achievementCopy(t: TFunc, id: string): { title: string; description: string } {
@@ -297,11 +313,16 @@ export function StatsScreen(): React.JSX.Element {
     };
   }, []);
 
+  // Solo Lab filed-sample count — drives the three lab achievements below
+  // (first-sample / field-researcher / lab-patron); everything else here is
+  // unaffected by it.
+  const lab = useLabStore();
+
   const lb = useMemo(() => levelBounds(profile.xp), [profile.xp]);
   const stats = useMemo(() => computeStats(sightings), [sightings]);
   const achievements = useMemo(
-    () => computeAchievements(sightings, streak),
-    [sightings, streak],
+    () => computeAchievements(sightings, streak, lab.samples.length),
+    [sightings, streak, lab.samples.length],
   );
   const todayCount = useMemo(() => selectTodayCount(state), [state]);
   const unlockedCount = useMemo(() => achievements.filter((a) => a.unlocked).length, [achievements]);

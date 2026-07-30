@@ -23,11 +23,13 @@
 import { resolveCaptiveStatus, isPubliclyReachable, type FindSetting } from '@/domain/accessibility';
 import { buildCardMetadata } from '@/domain/cardMetadata';
 import { evaluateDedup } from '@/domain/dedup';
+import { isBonusFind, qualifiesForMacroLens } from '@/domain/lab';
 import { applySpeciesRule } from '@/domain/speciesRules';
 import { nextStreak } from '@/domain/streak';
 import type { GeoPoint, Sighting } from '@/domain/types';
 import { getProviders } from '@/providers';
 import { loadStreakMeta, saveStreakMeta } from '@/store/persistence';
+import { labStore } from '@/store/lab';
 import { lifeDexStore, type CollectionCard } from '@/store/useLifeDexStore';
 import { pushSighting } from '@/lib/community';
 import { newId } from '@/utils/id';
@@ -70,6 +72,8 @@ export interface CreateSightingOk {
   cardId: string;
   /** Common name of the species (handy for duplicate messaging). */
   species: string;
+  /** True when this species is NOT in the curated catalogue — a Solo Lab "special find". */
+  isBonusFind: boolean;
 }
 
 export interface CreateSightingBlocked {
@@ -138,6 +142,7 @@ export async function createSightingFromImage(
       sightingId: dedup.existingSightingId,
       cardId: `card-${dedup.existingSightingId}`,
       species: recognition.commonName,
+      isBonusFind: isBonusFind(recognition),
     };
   }
 
@@ -153,7 +158,11 @@ export async function createSightingFromImage(
   const streakMeta = await loadStreakMeta();
   const streak = nextStreak(streakMeta.lastCaptureISO, nowISO, streakMeta.streak);
 
-  // 3. Scoring (rarity / XP).
+  // 3. Scoring (rarity / XP). The Solo Lab's Makro-Linse gadget only ADDS
+  // XP — it never gates the core catch flow — so it's computed here purely
+  // to feed the scoring engine's optional bonus step (scoring.ts's macroLens
+  // handling), regardless of whether the player owns the gadget at all.
+  const macroLens = labStore.ownsGadget('makro-linse') && qualifiesForMacroLens(recognition);
   const score = providers.rarityScoring.score({
     recognition,
     confidence: recognition.confidence,
@@ -163,6 +172,7 @@ export async function createSightingFromImage(
     qualityOk: moderation.qualityOk,
     isFirstDiscovery,
     streak,
+    macroLens,
   });
 
   // 4. Location privacy — fuzz the true point (fallback to 0,0 when absent).
@@ -205,6 +215,8 @@ export async function createSightingFromImage(
     publicLocation,
     card,
     moderation,
+    observationsCount: recognition.observationsCount,
+    taxonId: recognition.taxonId,
   };
 
   const collectionCard: CollectionCard = {
@@ -220,6 +232,12 @@ export async function createSightingFromImage(
 
   // Persist the advanced streak now that a new species was actually recorded.
   void saveStreakMeta({ lastCaptureISO: nowISO, streak });
+
+  // Solo Lab research points — ONLY the non-duplicate path reaches here (a
+  // duplicate returns earlier, above), so a re-catch never credits RP.
+  // Fire-and-forget: the trickle is a background passive-income stream, not
+  // shown with fanfare on this catch (unlike labStore.submitSample's payout).
+  labStore.creditCatchRp(score.rarity, isFirstDiscovery, recognition.category, nowISO);
 
   // Share the public-safe version to the community feed (best-effort; no-op when
   // Supabase is disabled). Fire-and-forget so it never blocks the capture.
@@ -238,5 +256,6 @@ export async function createSightingFromImage(
     sightingId,
     cardId,
     species: recognition.commonName,
+    isBonusFind: isBonusFind(recognition),
   };
 }

@@ -18,6 +18,9 @@
  * module-level injection so we can force `allowed: false` without URL magic.
  */
 import { createSightingFromImage } from '../src/services/sightingPipeline';
+import { resolveSpeciesRule } from '../src/domain/speciesRules';
+import { MockVisionProvider } from '../src/providers/mock/mockVision';
+import { labStore } from '../src/store/lab';
 import { lifeDexStore } from '../src/store/useLifeDexStore';
 
 /* ------------------------------------------------------------------ */
@@ -30,6 +33,7 @@ const BLOCKED_URI = 'mock://capture/face-blocked.jpg';
 
 beforeEach(() => {
   lifeDexStore.reset();
+  labStore.reset();
 });
 
 /* ------------------------------------------------------------------ */
@@ -335,5 +339,99 @@ describe('createSightingFromImage — find setting', () => {
     const sighting = lifeDexStore.getSightingById(result.sightingId);
     // A dog is inherently domestic; 'outdoors' does NOT upgrade it to wild.
     expect(sighting?.captiveStatus).toBe('domestic');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Solo Lab: research points credited via labStore                     */
+/* ------------------------------------------------------------------ */
+
+describe('createSightingFromImage — Solo Lab research points', () => {
+  it('credits research points on a new (non-duplicate) catch', async () => {
+    const before = labStore.getState().researchPoints;
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.duplicate).toBe(false);
+    expect(labStore.getState().researchPoints).toBeGreaterThan(before);
+  });
+
+  it('credits ZERO additional research points on a duplicate catch', async () => {
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    const afterFirst = labStore.getState().researchPoints;
+
+    const second = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.duplicate).toBe(true);
+    expect(labStore.getState().researchPoints).toBe(afterFirst);
+  });
+
+  it('a moderation-blocked photo credits NO research points', async () => {
+    const before = labStore.getState().researchPoints;
+    await createSightingFromImage({ imageUri: BLOCKED_URI });
+    expect(labStore.getState().researchPoints).toBe(before);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Solo Lab: isBonusFind on the result                                  */
+/* ------------------------------------------------------------------ */
+
+describe('createSightingFromImage — isBonusFind', () => {
+  it('is false for a species already in the curated catalogue (Domestic Dog)', async () => {
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.isBonusFind).toBe(false);
+  });
+
+  it('matches resolveSpeciesRule for whatever species a given URI resolves to', async () => {
+    // Self-consistent check (no hardcoded species name/table-index assumption):
+    // whatever MockVisionProvider deterministically resolves this URI to,
+    // isBonusFind on the pipeline result must agree with resolveSpeciesRule
+    // on that SAME species.
+    const uri = 'mock://capture/lab-bonus-find-probe.jpg';
+    const vision = new MockVisionProvider();
+    const recognized = await vision.recognize(uri);
+    const expectedBonus =
+      resolveSpeciesRule(recognized.commonName, recognized.scientificName) === undefined;
+
+    const result = await createSightingFromImage({ imageUri: uri });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.isBonusFind).toBe(expectedBonus);
+  });
+
+  it('a duplicate catch also carries isBonusFind', async () => {
+    await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    const second = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.duplicate).toBe(true);
+    expect(second.isBonusFind).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* observationsCount / taxonId carried onto the persisted Sighting      */
+/* ------------------------------------------------------------------ */
+
+describe('createSightingFromImage — observationsCount / taxonId persisted', () => {
+  it('persists observationsCount from the recognition result onto the Sighting', async () => {
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const sighting = lifeDexStore.getSightingById(result.sightingId);
+    // MockVisionProvider's 'Domestic Dog' entry carries observationsCount: 95_000.
+    expect(sighting?.observationsCount).toBe(95_000);
+  });
+
+  it('leaves taxonId undefined in mock mode (no iNat taxon id available)', async () => {
+    const result = await createSightingFromImage({ imageUri: CLEAN_URI, mockSpecies: 'dog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const sighting = lifeDexStore.getSightingById(result.sightingId);
+    expect(sighting?.taxonId).toBeUndefined();
   });
 });
