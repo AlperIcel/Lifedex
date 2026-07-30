@@ -8,9 +8,11 @@
  * `SPECIES_RULES` catalogue (`speciesRules.ts`) into a per-category structure
  * of owned tiles and dimmed "silhouette" gaps for species not yet caught.
  *
- * SECTIONS: the four categories the catalogue actually covers, in a fixed,
- * deterministic order — animal, plant, tree, mushroom (`DEX_CATEGORIES`). A
- * fifth 'unknown' section is appended ONLY when the player has at least one
+ * SECTIONS: the four categories the catalogue covers. They are ORDERED by how
+ * much the player has caught (most-caught category first) so the collection
+ * leads with where they've been most active — not always animals; ties fall back
+ * to the canonical `DEX_CATEGORIES` order (animal, plant, tree, mushroom). A
+ * fifth 'unknown' section is appended LAST, only when the player has at least one
  * caught sighting the recogniser itself could not categorise (a low-confidence
  * fallback — see `inatMapping.ts` / `mockVision.ts`); it never contributes to
  * any completion total and is omitted entirely when empty, so the common case
@@ -163,7 +165,7 @@ export function buildDex(rows: readonly DexSightingRow[]): DexResult {
 
   const bonusRows = [...bonusByIdentity.values()];
 
-  const sections: DexSection[] = DEX_CATEGORIES.map((category) => {
+  const mainSections: DexSection[] = DEX_CATEGORIES.map((category) => {
     const catalogue = SPECIES_RULES.filter((rule) => rule.category === category);
 
     const catalogueEntries: DexEntry[] = catalogue.map((rule): DexEntry => {
@@ -215,6 +217,18 @@ export function buildDex(rows: readonly DexSightingRow[]): DexResult {
       bonusCaught: bonusEntries.length,
     };
   });
+
+  // Order categories by how much the player has actually caught (most first), so
+  // the collection leads with where they've been most active — not always animals.
+  // Ties keep the canonical DEX_CATEGORIES order (stable by original index).
+  const sections: DexSection[] = mainSections
+    .map((section, index) => ({ section, index }))
+    .sort((a, b) => {
+      const diff =
+        b.section.caught + b.section.bonusCaught - (a.section.caught + a.section.bonusCaught);
+      return diff !== 0 ? diff : a.index - b.index;
+    })
+    .map((entry) => entry.section);
 
   // Bonus-only 'unknown' bucket — only when the recogniser itself couldn't
   // categorise a caught sighting. Omitted entirely when empty (the common case).

@@ -331,3 +331,33 @@ describe("buildDex — the 'unknown' bucket", () => {
     if (owlEntry?.kind === 'caught') expect(owlEntry.isBonus).toBe(false);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Section ordering (most-caught category first)                       */
+/* ------------------------------------------------------------------ */
+
+describe('buildDex — section order', () => {
+  it('leads with the category the player has caught the most in', () => {
+    const rows = [
+      makeRow({ commonName: 'Test Plant A', scientificName: 'Testus planta', category: 'plant' }),
+      makeRow({ commonName: 'Test Plant B', scientificName: 'Testus plantb', category: 'plant' }),
+      makeRow({ commonName: 'Red Fox', scientificName: 'Vulpes vulpes', category: 'animal' }),
+    ];
+    const order = buildDex(rows).sections.map((s) => s.category);
+    // plant: 2 caught (bonus), animal: 1 (catalogue), tree/mushroom: 0.
+    expect(order[0]).toBe('plant');
+    expect(order.indexOf('animal')).toBeLessThan(order.indexOf('tree'));
+    expect(order.indexOf('animal')).toBeLessThan(order.indexOf('mushroom'));
+    // Empty categories keep the canonical order among themselves.
+    expect(order.indexOf('tree')).toBeLessThan(order.indexOf('mushroom'));
+  });
+
+  it('an empty collection keeps the canonical animal/plant/tree/mushroom order', () => {
+    expect(buildDex([]).sections.map((s) => s.category)).toEqual([
+      'animal',
+      'plant',
+      'tree',
+      'mushroom',
+    ]);
+  });
+});
