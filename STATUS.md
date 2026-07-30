@@ -4,7 +4,7 @@
 > resuming, and UPDATE it whenever something meaningful changes. Working dir:
 > `C:\Users\Alper\Downloads\LifeDex`.
 >
-> **Last updated:** 2026-07-29
+> **Last updated:** 2026-07-30
 
 ---
 
@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 589 passing
+npm test                 # jest — currently 591 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -62,13 +62,35 @@ DONE — species-accurate recognition (live-verified), a scalable context-honest
 rarity economy, and a genuine game-feel layer (escalated reveal + visible
 level-up + sound + daily loop + achievement rewards + wonder onboarding +
 Living-Dex + reduce-motion a11y). This is a coherent, well-tested single-player
-v1 (~589 tests). What stands between here and a store launch is mostly OWNER /
+v1 (~591 tests). What stands between here and a store launch is mostly OWNER /
 process work, not core invention: the EAS dev build (queued), field playtesting,
 recognition proxies **deployed** (the code — incl. token auto-refresh — is done),
 Play closed testing (14-day clock), store assets, and content scale (bigger
 catalogue). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
+- **Daily-loop clarity + collection order + token refresher (2026-07-30).**
+  - **Species of the Day is now an info card, not a catch task** (`4b33f98`): the
+    row used to open the camera and show only a name — confusing (you can't catch
+    a named wild species on demand, e.g. a grass snake in a city, and it gave no
+    reward). New `SpeciesOfDayScreen` shows a Wikipedia photo + multi-paragraph
+    lore + "read more" + rarity/category, reusing `lib/lore.ts`. `speciesOfTheDay`
+    now also returns rarity+category; Home shows a thumbnail + "tap for info".
+  - **"Catch something wild" subtitle** "Not a pet or zoo animal" (de "Kein Haus-
+    oder Zootier") so the quest is unambiguous.
+  - **Collection shows discoveries first** (`3b78515`): real (uncatalogued "bonus")
+    catches used to sit BELOW every grey locked silhouette — so an actual find
+    (the Boston fern) was buried at the bottom. Each category now lists caught
+    tiles first (newest on top), locked silhouettes below. Counts/completion
+    unchanged, order only.
+  - **Capture-result status pill de-paw'd** (`dc1c87b`): the Wild/Domestic/Zoo pill
+    was hardcoded to an animal paw, so a plant got a paw. Icon now reflects the
+    STATUS (wild = trail-sign, domestic = home, zoo = building).
+  - **Local iNat token refresher** (`e4218c2`, `c6a2186`): `npm run inat:token`
+    mints a fresh 24h JWT from a stable credential and writes it into `.env` — no
+    more daily hand-copy. Uses a browser **session cookie** (no OAuth app needed,
+    since iNat gates app creation) or an OAuth access token / password grant.
+    Owner-side twin of the inat-proxy auto-refresh.
 - **Token expiry killed + tree/plant split + camera & a11y polish (2026-07-29).**
   - **iNat proxy auto-refreshes its own 24h JWT** (`supabase/functions/inat-proxy`):
     the ~24h personal `api_token` used to force a daily manual swap in `.env`. The
@@ -267,6 +289,12 @@ Community feed · shared map · real accounts (Apple/Google) · server-side scor
 validation · report button + `moderation_status` review · push · AI card restyle.
 
 ### Smaller follow-ups
+- **Capture accessibility toggle (PROPOSED — awaiting user decision):** the CV
+  can't tell a wild plant from a houseplant (it defaults every catch to `wild` —
+  `inatMapping.ts`). Offer a capture-time "outdoors / public vs at home / private"
+  choice to drive the map marker (public = huntable pin; private = "not
+  reachable"), the captive label, and a rarity cap for private finds. Pairs with
+  the real-map (parks/lakes) work, which needs the Google Maps key + dev build.
 - ✅ **km/mi done:** `formatDistance` (`store/settings.ts`) is now read by CardDetail
   (precision/radius), Home ("X away"), and Result (fuzzed-location note) — the
   units toggle in Settings updates them live. (Map circle stays geometric.)
