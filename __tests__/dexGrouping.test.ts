@@ -207,15 +207,50 @@ describe('buildDex — bonus finds', () => {
     expect(dex.totalCaught).toBe(0);
   });
 
-  it('bonus finds are appended AFTER the catalogue slots', () => {
+  it('caught finds (incl. bonus) come FIRST; locked silhouettes come after', () => {
     const rows = [
       makeRow({ commonName: 'Ghost Orchid', scientificName: 'Epipogium aphyllum', category: 'plant' }),
     ];
     const dex = buildDex(rows);
     const plant = section(dex, 'plant');
     expect(plant.entries).toHaveLength(plantCatalogueCount + 1);
+    // The bonus discovery is a real catch, so it sits at the TOP...
+    const firstEntry = plant.entries[0];
+    expect(firstEntry?.kind === 'caught' && firstEntry.isBonus).toBe(true);
+    // ...and the still-locked silhouettes come after it.
     const lastEntry = plant.entries[plant.entries.length - 1];
-    expect(lastEntry?.kind === 'caught' && lastEntry.isBonus).toBe(true);
+    expect(lastEntry?.kind).toBe('locked');
+  });
+
+  it('orders caught tiles newest-first, across catalogue and bonus finds', () => {
+    const olderCatalogue = makeRow(
+      {
+        commonName: 'Red Fox',
+        scientificName: 'Vulpes vulpes',
+        category: 'animal',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      'card-fox',
+    );
+    const newerBonus = makeRow(
+      {
+        commonName: 'Plains Zebra',
+        scientificName: 'Equus quagga',
+        category: 'animal',
+        createdAt: '2026-06-01T00:00:00.000Z',
+      },
+      'card-zebra',
+    );
+    // rows arrive newest-first by contract
+    const dex = buildDex([newerBonus, olderCatalogue]);
+    const animal = section(dex, 'animal');
+    // Newest catch (the bonus zebra) is the very first entry — above the older
+    // catalogue fox and above every locked silhouette.
+    expect(animal.entries[0]?.kind === 'caught' && animal.entries[0].cardId).toBe('card-zebra');
+    const foxIndex = animal.entries.findIndex((e) => e.kind === 'caught' && e.cardId === 'card-fox');
+    const firstLockedIndex = animal.entries.findIndex((e) => e.kind === 'locked');
+    expect(foxIndex).toBeGreaterThanOrEqual(0);
+    expect(foxIndex).toBeLessThan(firstLockedIndex);
   });
 
   it('THE FIX: catching many bonus species never pushes completion past 100%', () => {

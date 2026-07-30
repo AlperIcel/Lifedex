@@ -19,8 +19,8 @@
  * BONUS FINDS (design decision): the curated catalogue is ~47 species;
  * iNaturalist alone recognises hundreds of thousands, so most real catches
  * will NOT be in `SPECIES_RULES`. Those catches are real and worth
- * celebrating, so they ARE shown, in their category, appended after the
- * catalogue slots and marked `isBonus: true` — but they do NOT increment that
+ * celebrating, so they ARE shown, in their category, among the caught tiles
+ * (newest first) and marked `isBonus: true` — but they do NOT increment that
  * section's `caught` count or its `total`. If they did, catching enough
  * uncatalogued species would push a category's completion past 100%, which
  * would break the "honest completion" bar this screen shows (the whole point
@@ -41,7 +41,9 @@
  * Pure / deterministic: no I/O, no Date.now(), no randomness. `rows` should be
  * newest-first (matches `useLifeDexStore`'s `collectionCards` ordering) so
  * that, when a species was caught more than once, the tile shown is the most
- * recent catch — first occurrence per identity wins.
+ * recent catch — first occurrence per identity wins. Within each section the
+ * caught tiles are shown first (newest catch on top, catalogue + bonus
+ * intermixed by recency), then the locked silhouettes.
  */
 import { resolveSpeciesRule, SPECIES_RULES } from './speciesRules';
 import type { Category, Rarity, Sighting } from './types';
@@ -87,7 +89,7 @@ export type DexEntry = DexCaughtEntry | DexLockedEntry;
 
 export interface DexSection {
   category: Category;
-  /** Catalogue slots first (caught or locked, catalogue declaration order), then bonus finds. */
+  /** Caught tiles first (newest catch on top, catalogue + bonus by recency), then locked silhouettes. */
   entries: DexEntry[];
   /** Unique catalogued species caught in this category (excludes bonus finds). */
   caught: number;
@@ -117,6 +119,16 @@ export interface DexResult {
  */
 function identityKey(sighting: Sighting): string {
   return (sighting.scientificName ?? sighting.commonName).trim().toLowerCase();
+}
+
+/**
+ * Newest-first comparator by ISO `createdAt` (lexicographic order on an ISO
+ * timestamp is chronological). Pure — reads only a field already on the input.
+ */
+function byCreatedAtDesc(a: DexCaughtEntry, b: DexCaughtEntry): number {
+  const x = a.sighting.createdAt;
+  const y = b.sighting.createdAt;
+  return x < y ? 1 : x > y ? -1 : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -174,12 +186,15 @@ export function buildDex(rows: readonly DexSightingRow[]): DexResult {
       };
     });
 
-    const caught = catalogueEntries.reduce((n, e) => (e.kind === 'caught' ? n + 1 : n), 0);
+    const caughtCatalogue = catalogueEntries.filter(
+      (e): e is DexCaughtEntry => e.kind === 'caught',
+    );
+    const locked = catalogueEntries.filter((e): e is DexLockedEntry => e.kind === 'locked');
 
-    const bonusEntries: DexEntry[] = bonusRows
+    const bonusEntries: DexCaughtEntry[] = bonusRows
       .filter((row) => row.sighting.category === category)
       .map(
-        (row): DexEntry => ({
+        (row): DexCaughtEntry => ({
           kind: 'caught',
           key: `bonus:${category}:${identityKey(row.sighting)}`,
           cardId: row.cardId,
@@ -188,10 +203,14 @@ export function buildDex(rows: readonly DexSightingRow[]): DexResult {
         }),
       );
 
+    // Discoveries first — newest catch on top, catalogue + bonus intermixed by
+    // recency — then the still-locked silhouettes (see the module header).
+    const caughtNewestFirst = [...caughtCatalogue, ...bonusEntries].sort(byCreatedAtDesc);
+
     return {
       category,
-      entries: [...catalogueEntries, ...bonusEntries],
-      caught,
+      entries: [...caughtNewestFirst, ...locked],
+      caught: caughtCatalogue.length,
       total: catalogue.length,
       bonusCaught: bonusEntries.length,
     };
@@ -201,20 +220,21 @@ export function buildDex(rows: readonly DexSightingRow[]): DexResult {
   // categorise a caught sighting. Omitted entirely when empty (the common case).
   const unknownRows = bonusRows.filter((row) => row.sighting.category === 'unknown');
   if (unknownRows.length > 0) {
+    const unknownEntries: DexCaughtEntry[] = unknownRows.map(
+      (row): DexCaughtEntry => ({
+        kind: 'caught',
+        key: `bonus:unknown:${identityKey(row.sighting)}`,
+        cardId: row.cardId,
+        sighting: row.sighting,
+        isBonus: true,
+      }),
+    );
     sections.push({
       category: 'unknown',
-      entries: unknownRows.map(
-        (row): DexEntry => ({
-          kind: 'caught',
-          key: `bonus:unknown:${identityKey(row.sighting)}`,
-          cardId: row.cardId,
-          sighting: row.sighting,
-          isBonus: true,
-        }),
-      ),
+      entries: [...unknownEntries].sort(byCreatedAtDesc),
       caught: 0,
       total: 0,
-      bonusCaught: unknownRows.length,
+      bonusCaught: unknownEntries.length,
     });
   }
 
