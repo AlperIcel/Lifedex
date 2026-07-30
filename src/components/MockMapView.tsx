@@ -29,6 +29,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import type { Category, Rarity, Sighting } from '@/domain/types';
+import { isPubliclyReachable } from '@/domain/accessibility';
 import { colors, rarityColors, typography } from '@/theme/theme';
 
 /* ------------------------------------------------------------------ */
@@ -266,13 +267,21 @@ export default function MockMapView({
         const selected = selectedClusterId === cluster.id;
         const count = cluster.sightings.length;
         const cat = cluster.sightings[0]?.category ?? 'unknown';
+        // A private (at-home) find isn't out in public for others to hunt — dim
+        // it and badge it "at home" instead of showing the rarity dot.
+        const reachable = cluster.sightings.some((s) => isPubliclyReachable(s.captiveStatus));
+        const pinCol = reachable ? col : colors.textMuted;
         return (
           <TouchableOpacity
             key={`pin-${cluster.id}`}
             testID={`mock-pin-${cluster.id}`}
             activeOpacity={0.85}
             onPress={() => onClusterPress(cluster)}
-            style={[styles.pinWrap, { left: pos.x - PIN_SIZE / 2, top: pos.y - PIN_SIZE }]}
+            style={[
+              styles.pinWrap,
+              { left: pos.x - PIN_SIZE / 2, top: pos.y - PIN_SIZE },
+              !reachable && styles.pinWrapPrivate,
+            ]}
           >
             {/* shadow base */}
             <View style={styles.pinShadow} />
@@ -281,15 +290,19 @@ export default function MockMapView({
                 styles.pin,
                 {
                   backgroundColor: colors.surface,
-                  borderColor: col,
+                  borderColor: pinCol,
                 },
                 selected && styles.pinSelected,
               ]}
             >
-              <Ionicons name={CATEGORY_ICONS[cat]} size={22} color={col} />
+              <Ionicons name={CATEGORY_ICONS[cat]} size={22} color={pinCol} />
             </View>
-            {/* rarity dot + optional count */}
-            {count > 1 ? (
+            {/* private → "at home" badge; else rarity dot / optional count */}
+            {!reachable ? (
+              <View style={styles.privateBadge}>
+                <Ionicons name="home" size={10} color={colors.textPrimary} />
+              </View>
+            ) : count > 1 ? (
               <View style={[styles.countBadge, { backgroundColor: col }]}>
                 <Text style={styles.countBadgeText}>{count > 99 ? '99+' : String(count)}</Text>
               </View>
@@ -472,6 +485,24 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontWeight: '800',
     fontSize: 10,
+  },
+
+  /* Private (at-home) find — dimmed pin + home badge, not publicly reachable */
+  pinWrapPrivate: {
+    opacity: 0.72,
+  },
+  privateBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
 
   /* Fuzz circle (protected / hidden) */
