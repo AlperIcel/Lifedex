@@ -38,6 +38,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 
 import type { GeoPoint } from '@/domain/types';
 import { createSightingFromImage } from '@/services/sightingPipeline';
+import type { FindSetting } from '@/domain/accessibility';
 import { MOCK_HINTS, type MockHint } from '@/providers/mock/mockVision';
 import { env } from '@/config/env';
 import type { RootStackParamList, RootTabParamList } from '@/navigation/types';
@@ -83,6 +84,9 @@ const C = {
     grantCameraAccess: 'Grant Camera Access',
     capturePhotoA11y: 'Capture photo',
     close: 'Close',
+    findSettingOutdoors: 'Outdoors',
+    findSettingHome: 'At home',
+    findSettingA11y: 'Where did you find it? Outdoors (public) or at home (private)',
   },
   de: {
     framingHint: 'Tier oder Pflanze klar im Bild einrahmen',
@@ -114,6 +118,9 @@ const C = {
     grantCameraAccess: 'Kamerazugriff erlauben',
     capturePhotoA11y: 'Foto aufnehmen',
     close: 'Schließen',
+    findSettingOutdoors: 'Draußen',
+    findSettingHome: 'Zuhause',
+    findSettingA11y: 'Wo gefunden? Draußen (öffentlich) oder zuhause (privat)',
   },
 } as const;
 
@@ -375,6 +382,65 @@ function MockPickerBar({ selected, onSelect }: MockPickerBarProps): React.ReactE
 }
 
 /* ------------------------------------------------------------------ */
+/* Find-setting toggle — "where did you find it?" (outdoors vs at home) */
+/* ------------------------------------------------------------------ */
+
+interface FindSettingToggleProps {
+  value: FindSetting;
+  onChange: (v: FindSetting) => void;
+}
+
+const FIND_SETTING_OPTIONS: {
+  key: FindSetting;
+  icon: keyof typeof Ionicons.glyphMap;
+  labelKey: keyof typeof C.en;
+}[] = [
+  { key: 'outdoors', icon: 'leaf-outline', labelKey: 'findSettingOutdoors' },
+  { key: 'home', icon: 'home-outline', labelKey: 'findSettingHome' },
+];
+
+/**
+ * Compact segmented control above the shutter. 'home' marks the catch private
+ * (domestic: capped rarity, "not reachable" on the map, never shared). Default
+ * outdoors/public. See src/domain/accessibility.ts.
+ */
+function FindSettingToggle({ value, onChange }: FindSettingToggleProps): React.ReactElement {
+  const t = useT(C);
+  return (
+    <View style={styles.findSettingWrap} pointerEvents="box-none">
+      <View
+        style={styles.findSettingBar}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={t('findSettingA11y')}
+      >
+        {FIND_SETTING_OPTIONS.map((opt) => {
+          const selected = value === opt.key;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.findSettingOption, selected && styles.findSettingOptionSelected]}
+              onPress={() => onChange(opt.key)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              accessibilityLabel={t(opt.labelKey)}
+            >
+              <Ionicons
+                name={opt.icon}
+                size={16}
+                color={selected ? colors.onAccent : colors.textSecondary}
+              />
+              <Text style={[styles.findSettingLabel, selected && styles.findSettingLabelSelected]}>
+                {t(opt.labelKey)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Main screen                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -387,6 +453,9 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
   const [pipeline, setPipeline] = useState<PipelineState>({ phase: 'idle' });
   // Mock-mode test-subject pick (null = deterministic auto). Ignored by real AI.
   const [mockSpecies, setMockSpecies] = useState<MockHint | null>(null);
+  // Where the player found it — drives captiveStatus (rarity cap), map reach, and
+  // community sharing. Default outdoors/public; see src/domain/accessibility.ts.
+  const [findSetting, setFindSetting] = useState<FindSetting>('outdoors');
   const cameraRef = useRef<CameraView>(null);
 
   // Shutter button animation
@@ -438,6 +507,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         const result = await createSightingFromImage({
           imageUri,
           location,
+          findSetting,
           // Mock-only hint; undefined in real mode or when "Auto" is selected.
           mockSpecies: env.isMockAi && mockSpecies !== null ? mockSpecies : undefined,
         });
@@ -472,7 +542,7 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
         setPipeline({ phase: 'error', message: t('unexpectedError') });
       }
     },
-    [navigation, mockSpecies, t],
+    [navigation, mockSpecies, findSetting, t],
   );
 
   /* ---------- Capture ---------- */
@@ -608,6 +678,9 @@ export default function CaptureScreen({ navigation }: Props): React.ReactElement
       {env.isMockAi && !captureActive && (
         <MockPickerBar selected={mockSpecies} onSelect={setMockSpecies} />
       )}
+
+      {/* Where did you find it? — outdoors (public) vs at home (private) */}
+      {!captureActive && <FindSettingToggle value={findSetting} onChange={setFindSetting} />}
 
       {/* Bottom controls */}
       <View style={[styles.bottomBar, { paddingBottom: spacing.xxl }]}>
@@ -790,7 +863,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 150,
+    bottom: 210,
     paddingHorizontal: spacing.md,
   },
   mockBarTitle: {
@@ -808,6 +881,40 @@ const styles = StyleSheet.create({
   mockChipRow: {
     gap: spacing.sm,
     paddingHorizontal: spacing.xs,
+  },
+
+  /* Find-setting toggle (outdoors / at home) */
+  findSettingWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 132,
+    alignItems: 'center',
+  },
+  findSettingBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.overlay,
+    borderRadius: radius.pill,
+    padding: 3,
+  },
+  findSettingOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: radius.pill,
+  },
+  findSettingOptionSelected: {
+    backgroundColor: colors.accent,
+  },
+  findSettingLabel: {
+    ...typography.footnote,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  findSettingLabelSelected: {
+    color: colors.onAccent,
   },
 
   /* Bottom controls */
