@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 600 passing
+npm test                 # jest — currently 684 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -40,6 +40,7 @@ Every change must keep **tsc + jest + `npx expo export` (bundle)** green.
 | Area | State |
 |---|---|
 | Capture → dedup → card → Collection/Map/Stats loop | ✅ works |
+| Solo Lab (research bench for uncatalogued "bonus find" catches) | ✅ done — vials/RP/gadgets/samples (`src/store/lab.ts`), Makro-Linse +15% XP hook in scoring, weekly research focus, ResultScreen bonus-find banner, new `LabScreen`; zero network I/O, community panel is copy-only (v1.1 teaser) |
 | Recognition + moderation | ✅ REAL (Google Vision, live-verified) / mock fallback |
 | Rarity economy + protected-species hiding | ✅ real AND scalable — curated catalogue → real iNat observation frequency → capped generic fallback |
 | Card image | ✅ on-device subject crop (real) · AI restyle = premium stub |
@@ -69,6 +70,70 @@ Play closed testing (14-day clock), store assets, and further content scale
 (catalogue now 130 curated species). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
+- **Solo Lab teaser shipped (2026-07-30, senior-review spec).** A single-player
+  "field bench" for catches OUTSIDE the curated `speciesRules.ts` catalogue —
+  explicitly NOT a fake community (no dead buttons, no fake progress counters,
+  no simulated other players). Submitting a sample pays out IMMEDIATELY: a vial
+  is consumed, research points are minted, the specimen is filed with its
+  global-rarity intel, maybe an achievement unlocks.
+  - New pure domain `src/domain/lab.ts`: `GadgetId`/`LabSample` types, one
+    `LAB_TUNING` tunable block (mirrors `observationRarity.ts`'s style), and
+    `isBonusFind` / `canSubmitSample` / `buildSample` / `rpForCatch` /
+    `canBuyGadget` / `weekKeyOf` / `labFocusForWeek` / `qualifiesForMacroLens`
+    — all pure, all unit-tested (`__tests__/lab.test.ts`).
+  - New shared `src/domain/seededRotation.ts` (`hashString`/`mulberry32`/
+    `seededShuffle`) lifted out of `dailyQuests.ts` (which now imports it
+    instead of duplicating it) so `lab.ts`'s weekly focus rotation reuses the
+    exact same seed→shuffle machinery — `dailyQuests.test.ts` still green
+    (behaviour byte-identical).
+  - New reactive singleton `src/store/lab.ts` (copies `settings.ts`'s skeleton:
+    versioned AsyncStorage key `lifedex:lab:v1`, sanitize guard, single-flight
+    `hydrate()`, `flush()`) holding `researchPoints`/`vials`/`ownedGadgets`/
+    `samples`. Every action (`submitSample`, `creditCatchRp`, `buyVial`,
+    `buyGadget`, `grantDailyVial`) is gated IN THE STORE (same defensive stance
+    as `claimDailyReward`), so the invariants hold even if a caller bypasses a
+    disabled button. Wired into `persistence.ts`'s `clearUserCaptures()` so
+    factory-reset stays complete (key duplicated as a literal, not imported —
+    avoids a persistence→lab→useLifeDexStore→persistence import cycle).
+  - Scoring gains a Makro-Linse **+15% XP** step (`scoring.ts`, inserted
+    between the first-discovery and streak steps so the zoo/domestic caps and
+    duplicate floor still apply — a post-score bonus would have bypassed them).
+  - `sightingPipeline.ts`: computes `macroLens` (gadget owned AND
+    `qualifiesForMacroLens`), credits Lab RP on every non-duplicate catch,
+    carries `observationsCount`/`taxonId` onto the persisted `Sighting`, and
+    adds `isBonusFind` to its result — moderation/dedup/privacy/
+    `features.communitySharing` untouched.
+  - Schema (`domain/types.ts`, all optional, old persisted rows still parse):
+    `RecognitionResult` gains `iconicTaxon` (spec) **and** `taxonId` (added
+    beyond the literal spec text — needed so the pipeline can actually carry
+    the iNat taxon id through without touching the raw `InatScoreResponse`;
+    populated in `inatMapping.ts`'s `mapInatResponse` from the same accepted
+    candidate `topTaxonId` already reads, so the two never disagree);
+    `Sighting` gains `observationsCount`+`taxonId`; `ScoreInput` gains
+    `macroLens`. One mock species (Peacock Butterfly) tagged
+    `iconicTaxon: 'Insecta'` so the Makro-Linse is demonstrable keyless.
+  - `ResultScreen.tsx`: one new Reveal group (bonus finds only, between the XP
+    banner and safety/description) offering "Send to the Lab" — vial-available/
+    already-sampled/no-vials states, "View Lab" link; level-up/achievement
+    sequencing untouched.
+  - New `src/screens/LabScreen.tsx` (hero RP/vials/level; weekly research
+    focus, locked teaser until the Lab Pass gadget; sample bench newest-first
+    with real card art + tap→CardDetail; equipment shop with level/price gates;
+    a copy-only "coming in v1.1" community panel) registered as a pushed stack
+    screen next to SpeciesOfDay. Entry points: the ResultScreen banner + a new
+    flask-outline affordance on Home's Today card (which now also grants one
+    bonus vial via `grantDailyVial` on a successful daily-reward claim).
+  - 3 new achievements (`first-sample`/`field-researcher`/`lab-patron` at 1/5/15
+    filed samples) via `computeAchievements`'s optional 3rd `sampleCount` arg
+    (defaults to 0 — every other caller unaffected); StatsScreen shows real
+    progress (reads `labStore`); LabScreen owns its OWN pending-achievement
+    queue + toast (mirrors `useLifeDexStore`'s pattern) so it never competes
+    with ResultScreen's level-up/achievement choreography.
+  - EN/DE throughout (existing strings byte-stable). Zero network I/O anywhere
+    in the feature. +84 tests (600 → 684): new `lab.test.ts`/`labStore.test.ts`,
+    plus additions to `scoring.test.ts`, `sightingPipeline.test.ts`,
+    `domain.types.test.ts`, `achievements.test.ts`. tsc/jest/`expo export
+    --platform android` all green.
 - **Species-of-Day always has a photo · collection order · catalogue 47→130 (2026-07-30).**
   - **Reliable Species-of-the-Day media** (`28270b1`): some species (Grass Snake)
     showed no picture — `lore.ts` used only English Wikipedia by exact title. New
@@ -312,6 +377,27 @@ Community feed · shared map · real accounts (Apple/Google) · server-side scor
 validation · report button + `moderation_status` review · push · AI card restyle.
 
 ### Smaller follow-ups
+- **Solo Lab next steps:** `LAB_TUNING` (vial price, RP-per-rarity, gadget
+  price/level) is un-playtested — tune after real play, same stance as the
+  rarity curve. Section 4.6 (lab achievements) shipped; if the Solo Lab needs
+  scope-cutting later, that's the first thing to trim. The community panel is
+  copy-only by design — wire real cross-player sample verification only
+  alongside the v1.1 community launch (same gate as everything else in "Cut to
+  v1.1+" below).
+- **Region-aware targeting (DESIGN PRINCIPLE — owner note 2026-07-30):** any task
+  that names a SPECIFIC species (Species-of-the-Day, future species-targeted
+  quests/lures) MUST be regionally plausible — never ask for a species that
+  doesn't occur in the player's country. Source: iNaturalist's regional
+  observation data (`/v1/observations/species_counts` by coarse location — the
+  same token-free API family as rarity), keyed on the fuzzed capture GPS or the
+  device region as a fallback. Effort tiering: MUST-HAVE tasks (daily quests,
+  Lab weekly focus, Species-of-Day) stay near / short-trip and are ALREADY safe
+  because they are CATEGORY-based ("catch a mushroom", not "find species X");
+  only BONUS/special targets may sit a ½–1 h drive away with bigger rewards, and
+  are never marked mandatory. Build the regional species picker when
+  species-specific targeting lands (Species-of-Day tuning first, then lures); it
+  also underpins international catalogue scaling (the 130 curated species are
+  currently Europe/DE-centric).
 - ✅ **Capture accessibility toggle DONE (2026-07-30):** the outdoors/at-home
   choice drives captiveStatus (domestic rarity/XP cap), the map "not reachable"
   marker, and privacy (home finds never shared). Still pending: the REAL map
