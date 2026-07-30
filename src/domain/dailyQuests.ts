@@ -24,7 +24,7 @@
  */
 import { uniqueSpeciesKey } from '@/domain/stats';
 import { SPECIES_RULES } from '@/domain/speciesRules';
-import type { Rarity, Sighting } from '@/domain/types';
+import type { Category, Rarity, Sighting } from '@/domain/types';
 
 /* ------------------------------------------------------------------ */
 /* Public types                                                        */
@@ -40,6 +40,14 @@ export interface DailyQuest {
 export interface SpeciesOfDay {
   name: string;
   scientificName?: string;
+  /**
+   * Rarity tier from the chosen SPECIES_RULES entry (rule.baseRarity) — lets the
+   * Species-of-Day info screen (SpeciesOfDayScreen) render a RarityBadge without
+   * a second catalogue lookup.
+   */
+  rarity: Rarity;
+  /** Category from the chosen SPECIES_RULES entry (rule.category). */
+  category: Category;
 }
 
 /**
@@ -241,7 +249,12 @@ const SPECIES_OF_DAY_POOL = SPECIES_RULES.filter(
  * A deterministic daily highlight pulled from the curated SPECIES_RULES
  * catalogue (minus domestic entries — see SPECIES_OF_DAY_POOL). Salted
  * differently from quest selection (`species:` prefix) so the two rotations
- * don't visibly correlate day to day.
+ * don't visibly correlate day to day. Carries the chosen rule's rarity and
+ * category alongside name/scientificName — this is an INFORMATIONAL spotlight
+ * (see SpeciesOfDayScreen), not a capture prompt, so the screen needs enough
+ * to render a RarityBadge + category label without a second catalogue lookup.
+ * Pure/deterministic: no Date.now()/Math.random(), same dayKey always yields
+ * the same result.
  */
 export function speciesOfTheDay(dayKey: string): SpeciesOfDay {
   const seed = hashString(`species:${dayKey}`);
@@ -249,5 +262,10 @@ export function speciesOfTheDay(dayKey: string): SpeciesOfDay {
   // SPECIES_OF_DAY_POOL is a non-empty static catalogue; idx is always in range.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const rule = SPECIES_OF_DAY_POOL[idx]!;
-  return { name: rule.commonName, scientificName: rule.scientificName };
+  return {
+    name: rule.commonName,
+    scientificName: rule.scientificName,
+    rarity: rule.baseRarity,
+    category: rule.category,
+  };
 }

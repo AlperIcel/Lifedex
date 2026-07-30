@@ -13,6 +13,7 @@ import {
   type DailyQuestId,
 } from '../src/domain/dailyQuests';
 import { SPECIES_RULES } from '../src/domain/speciesRules';
+import { CategorySchema, RaritySchema } from '../src/domain/types';
 import type { Category, Sighting } from '../src/domain/types';
 
 let seq = 0;
@@ -325,11 +326,26 @@ describe('speciesOfTheDay', () => {
     expect(speciesOfTheDay(DAY)).toEqual(speciesOfTheDay(DAY));
   });
 
-  it('returns a real catalogue entry (name + matching scientificName)', () => {
+  it('returns a real catalogue entry (name + matching scientificName, rarity, category)', () => {
     const pick = speciesOfTheDay(DAY);
     const match = SPECIES_RULES.find((r) => r.commonName === pick.name);
     expect(match).toBeDefined();
     expect(pick.scientificName).toBe(match?.scientificName);
+    expect(pick.rarity).toBe(match?.baseRarity);
+    expect(pick.category).toBe(match?.category);
+  });
+
+  it('always carries a present and valid rarity + category (SpeciesOfDayScreen renders both)', () => {
+    for (let m = 1; m <= 12; m++) {
+      for (const day of [1, 10, 20]) {
+        const key = `2026-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const pick = speciesOfTheDay(key);
+        expect(pick.rarity).toBeDefined();
+        expect(RaritySchema.safeParse(pick.rarity).success).toBe(true);
+        expect(pick.category).toBeDefined();
+        expect(CategorySchema.safeParse(pick.category).success).toBe(true);
+      }
+    }
   });
 
   it('varies across different days (not always the same species)', () => {

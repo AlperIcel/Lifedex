@@ -3,6 +3,7 @@
  * and params stay type-checked across the app.
  */
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { Category, Rarity } from '@/domain/types';
 
 /** Bottom tab bar. */
 export type RootTabParamList = {
@@ -21,6 +22,8 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Tabs: NavigatorScreenParams<RootTabParamList>;
   CardDetail: { cardId: string };
+  /** Informational Species-of-the-Day screen (picture + lore + rarity/category) — NOT a capture flow. */
+  SpeciesOfDay: { name: string; scientificName?: string; rarity: Rarity; category: Category };
   Result: { sightingId: string };
   Settings: undefined;
 };

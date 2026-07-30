@@ -43,6 +43,7 @@ import {
   type DailyQuestId,
 } from '@/domain/dailyQuests';
 import type { Rarity, Sighting } from '@/domain/types';
+import { useLore } from '@/lib/lore';
 import { useT } from '@/i18n';
 import {
   levelBounds,
@@ -143,8 +144,10 @@ const C = {
     questRareOrNew: 'Catch something rare or new',
     questVolume5: 'Log 5 sightings today',
     questWild1: 'Catch something wild',
+    questWild1Sub: 'Not a pet or zoo animal',
     speciesOfDay: 'Species of the Day',
-    speciesOfDayA11y: 'Species of the Day: {name}. Tap to go find it.',
+    speciesOfDayA11y: 'Species of the Day: {name}. Tap for info.',
+    speciesOfDayCaption: 'Tap for info & photo',
     claimReward: 'Claim +{xp} XP',
     rewardClaimed: 'Reward claimed',
     completeQuestsFirst: '{done}/{total} quests done',
@@ -185,8 +188,10 @@ const C = {
     questRareOrNew: 'Fang etwas Seltenes oder Neues',
     questVolume5: 'Erfasse heute 5 Sichtungen',
     questWild1: 'Fang etwas Wildes',
+    questWild1Sub: 'Kein Haus- oder Zootier',
     speciesOfDay: 'Art des Tages',
-    speciesOfDayA11y: 'Art des Tages: {name}. Tippen, um sie zu suchen.',
+    speciesOfDayA11y: 'Art des Tages: {name}. Tippen für Infos.',
+    speciesOfDayCaption: 'Tippen für Infos & Bild',
     claimReward: '+{xp} XP abholen',
     rewardClaimed: 'Belohnung abgeholt',
     completeQuestsFirst: '{done}/{total} Quests geschafft',
@@ -221,6 +226,17 @@ const QUEST_TITLE_KEY: Record<DailyQuestId, keyof typeof C.en> = {
   'rare-or-new': 'questRareOrNew',
   'volume-5': 'questVolume5',
   'wild-1': 'questWild1',
+};
+
+/**
+ * Optional clarifying subtitle, rendered as its own small muted line under a
+ * quest's title. Only 'wild-1' needs one today — "wild" is ambiguous (does a
+ * garden bird count? a zoo animal seen through the fence?) so it spells out
+ * the captiveStatus === 'wild' rule the quest actually checks (see
+ * dailyQuests.ts's QUEST_DEFS). Sparse map: most quests need no subtitle.
+ */
+const QUEST_SUBTITLE_KEY: Partial<Record<DailyQuestId, keyof typeof C.en>> = {
+  'wild-1': 'questWild1Sub',
 };
 
 /* ------------------------------------------------------------------ */
@@ -356,6 +372,7 @@ function DailyQuestRow({ quest }: { quest: DailyQuest }) {
   const t = useT(C);
   const title = t(QUEST_TITLE_KEY[quest.id]);
   const icon = QUEST_ICON[quest.id];
+  const subtitleKey = QUEST_SUBTITLE_KEY[quest.id];
   // Small visible sliver once progress starts (matches StatsScreen's achievement bars).
   const pct =
     quest.target > 0
@@ -387,6 +404,11 @@ function DailyQuestRow({ quest }: { quest: DailyQuest }) {
             </Text>
           )}
         </View>
+        {subtitleKey !== undefined && (
+          <Text style={styles.questSubtitle} numberOfLines={1}>
+            {t(subtitleKey)}
+          </Text>
+        )}
         <View style={styles.questTrack}>
           <View
             style={[styles.questFill, { width: `${pct}%` }, quest.done && styles.questFillDone]}
@@ -424,6 +446,10 @@ export function HomeScreen(): React.JSX.Element {
     [todayKey, state.sightings],
   );
   const speciesToday = useMemo(() => speciesOfTheDay(todayKey), [todayKey]);
+  // Small thumbnail for the Species-of-Day row (best-effort, same Wikipedia
+  // lookup the info screen uses). speciesToday is always defined, so this hook
+  // call is unconditional — no rules-of-hooks violation.
+  const { lore: speciesLore } = useLore(speciesToday.scientificName, speciesToday.name);
   const doneCount = quests.filter((q) => q.done).length;
   const allQuestsDone = quests.length > 0 && doneCount === quests.length;
   const alreadyClaimedToday = state.dailyRewardClaimedDayKey === todayKey;
@@ -471,6 +497,17 @@ export function HomeScreen(): React.JSX.Element {
   const handleCapturePress = useCallback(() => {
     navigation.navigate('Tabs', { screen: 'Capture' });
   }, [navigation]);
+
+  // Species of the Day is informational (picture + lore), not a capture
+  // prompt — tapping it opens SpeciesOfDayScreen, not the camera.
+  const handleSpeciesOfDayPress = useCallback(() => {
+    navigation.navigate('SpeciesOfDay', {
+      name: speciesToday.name,
+      scientificName: speciesToday.scientificName,
+      rarity: speciesToday.rarity,
+      category: speciesToday.category,
+    });
+  }, [navigation, speciesToday]);
 
   const handleNearbyPress = useCallback(
     (_hintId: string) => {
@@ -545,13 +582,21 @@ export function HomeScreen(): React.JSX.Element {
           <View style={styles.todayDivider} />
 
           <Pressable
-            onPress={handleCapturePress}
+            onPress={handleSpeciesOfDayPress}
             style={({ pressed }) => [styles.speciesRow, pressed && styles.cardPressed]}
             accessibilityRole="button"
             accessibilityLabel={t('speciesOfDayA11y', { name: speciesToday.name })}
           >
             <View style={styles.speciesIconBubble}>
-              <Ionicons name="sparkles" size={22} color={colors.amber} />
+              {speciesLore?.imageUrl !== undefined ? (
+                <Image
+                  source={{ uri: speciesLore.imageUrl }}
+                  style={styles.speciesThumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="sparkles" size={22} color={colors.amber} />
+              )}
             </View>
             <View style={styles.speciesBody}>
               <Text style={styles.speciesLabel}>{t('speciesOfDay')}</Text>
@@ -563,6 +608,9 @@ export function HomeScreen(): React.JSX.Element {
                   {speciesToday.scientificName}
                 </Text>
               ) : null}
+              <Text style={styles.speciesCaption} numberOfLines={1}>
+                {t('speciesOfDayCaption')}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </Pressable>
@@ -882,6 +930,10 @@ const styles = StyleSheet.create({
     ...{ fontVariant: ['tabular-nums'] as const },
     color: colors.textTertiary,
   },
+  questSubtitle: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
   questTrack: {
     height: 5,
     borderRadius: radius.pill,
@@ -915,6 +967,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: rarityTints.legendary,
     flexShrink: 0,
+    overflow: 'hidden',
+  },
+  speciesThumbnail: {
+    ...StyleSheet.absoluteFillObject,
   },
   speciesBody: {
     flex: 1,
@@ -934,6 +990,11 @@ const styles = StyleSheet.create({
     ...typography.footnote,
     color: colors.textTertiary,
     fontStyle: 'italic',
+  },
+  speciesCaption: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   claimButton: {
     marginTop: 0,
