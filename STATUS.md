@@ -26,7 +26,7 @@ so it runs with **no keys**.
 ```bash
 cd C:\Users\Alper\Downloads\LifeDex
 npm install
-npm test                 # jest — currently 598 passing
+npm test                 # jest — currently 600 passing
 npx tsc --noEmit         # type check — clean
 npm start                # Expo dev server (press a = Android emulator)
 ```
@@ -62,13 +62,27 @@ DONE — species-accurate recognition (live-verified), a scalable context-honest
 rarity economy, and a genuine game-feel layer (escalated reveal + visible
 level-up + sound + daily loop + achievement rewards + wonder onboarding +
 Living-Dex + reduce-motion a11y). This is a coherent, well-tested single-player
-v1 (~598 tests). What stands between here and a store launch is mostly OWNER /
+v1 (~600 tests). What stands between here and a store launch is mostly OWNER /
 process work, not core invention: the EAS dev build (queued), field playtesting,
 recognition proxies **deployed** (the code — incl. token auto-refresh — is done),
-Play closed testing (14-day clock), store assets, and content scale (bigger
-catalogue). Community/accounts remain cut to v1.1.
+Play closed testing (14-day clock), store assets, and further content scale
+(catalogue now 130 curated species). Community/accounts remain cut to v1.1.
 
 ## Recently done (highlights)
+- **Species-of-Day always has a photo · collection order · catalogue 47→130 (2026-07-30).**
+  - **Reliable Species-of-the-Day media** (`28270b1`): some species (Grass Snake)
+    showed no picture — `lore.ts` used only English Wikipedia by exact title. New
+    `src/lib/taxonMedia.ts` adds an **iNaturalist taxon photo + summary** (same
+    token-free API as rarity; a photo for ~every species) as the guaranteed image;
+    Wikipedia lore layered on top for richer text; CC attribution shown.
+  - **Collection ordered by most-caught category** (`9f45e66`): not always animals
+    first — leads with the category you've caught the most in (ties keep canonical
+    order).
+  - **Catalogue 47 → 130** (`b5af26e`): +83 common European species (animal 29→60,
+    plant 8→30, tree 6→24, mushroom 4→16) with correct binomials, honest rarity,
+    conservative sensitivity. Additions only; every original entry untouched. (Real
+    catches were never limited to the catalogue — iNat adds hundreds of thousands
+    as uncounted "bonus" finds; this just grows the guaranteed checklist.)
 - **Capture "where did you find it?" — outdoors vs at home (2026-07-30).** The
   recogniser can't tell a wild plant from a houseplant (defaults to `wild`), so
   the player now chooses at capture: a segmented "Outdoors / At home" toggle above
@@ -330,7 +344,7 @@ key + dev build.
 - Providers (swap real/mock): `src/providers/` — `interfaces.ts`, `mock/`, `google/`,
   `inaturalist/` (CV, primary), `plantnet/` (flora refiner). Factory: `index.ts`.
 - Backend glue: `src/lib/` — supabase, community, cardImageUpload, leaderboard,
-  onboarding, lore (Wikipedia), inatObservations (rarity signal).
+  onboarding, lore (Wikipedia), taxonMedia (iNat photo+summary), inatObservations (rarity signal).
 - UI: `src/screens/`, shared `src/components/`, `src/theme/theme.ts`, `src/navigation/`.
 - Backend SQL/functions/docs: `supabase/`, `docs/`.
 
