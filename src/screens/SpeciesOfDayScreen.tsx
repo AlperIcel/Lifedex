@@ -47,6 +47,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { RarityBadge } from '@/components/RarityBadge';
 import type { Category } from '@/domain/types';
 import { useLore } from '@/lib/lore';
+import { useTaxonMedia } from '@/lib/taxonMedia';
 import { useT, useCommon } from '@/i18n';
 import {
   colors,
@@ -118,10 +119,22 @@ export function SpeciesOfDayScreen({ route, navigation }: Props): React.JSX.Elem
   // Species lore (Wikipedia, best-effort). Hook called unconditionally;
   // resolves to null offline / when there's no article. Only the species name
   // is ever sent — see useLore's privacy note.
-  const { lore, loading } = useLore(scientificName, name);
+  const { lore, loading: loreLoading } = useLore(scientificName, name);
+  // iNaturalist taxon photo — the reliable image source (Wikipedia can miss, and
+  // that left some species with no picture). iNat has a photo for ~every species.
+  const { media, loading: mediaLoading } = useTaxonMedia(scientificName, name);
 
   const rarityColor = rarityColors[rarity];
   const categoryIcon = CATEGORY_ICON[category];
+
+  // Image: iNat photo preferred (near-universal), else Wikipedia lead image.
+  const imageUrl = media?.imageUrl ?? lore?.imageUrl;
+  const imageIsInat = imageUrl !== undefined && imageUrl === media?.imageUrl;
+  const imageLoading = imageUrl === undefined && (mediaLoading || loreLoading);
+  // Text: prefer the richer multi-paragraph Wikipedia lore, else iNat's summary.
+  const summaryText = lore?.summary ?? media?.summary;
+  const articleUrl = lore?.url ?? media?.url;
+  const textLoading = summaryText === undefined && (loreLoading || mediaLoading);
 
   const handleBack = useCallback(() => {
     haptics.tap();
@@ -151,14 +164,14 @@ export function SpeciesOfDayScreen({ route, navigation }: Props): React.JSX.Elem
 
         {/* ── Big reference image (loading / found / fallback) ── */}
         <View style={[styles.imageArea, { backgroundColor: rarityTints[rarity] }]}>
-          {loading ? (
+          {imageLoading ? (
             <View style={styles.imageLoading}>
               <ActivityIndicator color={colors.textMuted} />
               <Text style={styles.imageLoadingText}>{t('lookingUp', { name })}</Text>
             </View>
-          ) : lore?.imageUrl !== undefined ? (
+          ) : imageUrl !== undefined ? (
             <Image
-              source={{ uri: lore.imageUrl }}
+              source={{ uri: imageUrl }}
               style={styles.image}
               resizeMode="cover"
               accessibilityLabel={t('referencePhotoA11y', { name })}
@@ -167,6 +180,12 @@ export function SpeciesOfDayScreen({ route, navigation }: Props): React.JSX.Elem
             <Ionicons name={categoryIcon} size={64} color={rarityColor} />
           )}
         </View>
+        {/* CC photo credit — required wherever an iNaturalist photo is shown. */}
+        {imageIsInat && media?.attribution !== undefined && (
+          <Text style={styles.attribution} numberOfLines={2}>
+            {media.attribution}
+          </Text>
+        )}
 
         {/* ── Identity + lore ── */}
         <View style={styles.body}>
@@ -188,23 +207,23 @@ export function SpeciesOfDayScreen({ route, navigation }: Props): React.JSX.Elem
 
           {/* Lore — same branching + paragraph split as CardDetailScreen's About block */}
           <View style={styles.section}>
-            {loading ? null : lore !== null ? (
+            {textLoading ? null : summaryText !== undefined ? (
               <>
-                {lore.summary.split(/\n{2,}/).map((para, i) => (
+                {summaryText.split(/\n{2,}/).map((para, i) => (
                   <Text key={i} style={[styles.loreText, i > 0 && styles.loreParaSpacing]}>
                     {para.trim()}
                   </Text>
                 ))}
                 <View style={styles.loreFooter}>
                   <Text style={styles.loreSource}>
-                    {lore.description !== undefined
+                    {lore?.description !== undefined
                       ? `${lore.description} · ${t('viaWikipedia')}`
                       : t('viaWikipedia')}
                   </Text>
-                  {lore.url !== undefined && (
+                  {articleUrl !== undefined && (
                     <Pressable
                       onPress={() => {
-                        void Linking.openURL(lore.url as string);
+                        void Linking.openURL(articleUrl);
                       }}
                       hitSlop={8}
                       accessibilityRole="link"
@@ -287,6 +306,12 @@ const styles = StyleSheet.create({
   imageLoadingText: {
     ...typography.footnote,
     color: colors.textMuted,
+  },
+  attribution: {
+    ...typography.caption,
+    color: colors.textMuted,
+    paddingHorizontal: gutter,
+    marginTop: spacing.xs,
   },
 
   /* ── Body ── */
